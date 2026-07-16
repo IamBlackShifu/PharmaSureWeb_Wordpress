@@ -1,0 +1,105 @@
+# Git ignore for PharmaSure WordPress Development
+
+# WordPress Core
+/wp-admin/
+/wp-includes/
+wp-config.php
+wp-config-local.php
+wp-settings.php
+index.php
+license.txt
+readme.html
+.htaccess
+
+# WordPress Content (but track plugin/theme source)
+/wp-content/uploads/
+/wp-content/backup-*
+/wp-content/cache/
+/wp-content/backup-migration-*
+!wp-content/plugins/pharmasure-*/
+!wp-content/themes/pharmasure-*/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+secrets.txt
+*.pem
+*.key
+*.crt
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.project
+.classpath
+.c9/
+*.sublime-workspace
+
+# Node modules and build artifacts
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# Composer
+vendor/
+composer.lock
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+/wp-content/debug.log
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+cache/
+
+# OS Generated files
+.AppleDouble
+.LSOverride
+Desktop.ini
+
+# Package managers
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+
+# Build outputs
+dist/
+build/
+*.zip
+
+# Database exports
+*.sql
+*.sql.gz
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# IDE Debugger
+.xdebug.log
+
+# Session files
+sessions/
+*.sess

@@ -1,0 +1,26 @@
+version: 2
+project_type: wordpress
+root_directory: .
+
+# PharmaSure Project Configuration
+project_name: "PharmaSure WordPress"
+description: "Multi-tenant pharmacy management system for WordPress"
+
+# Build & deployment settings
+build_directory: ./docker
+
+# Environment variables
+environment:
+  WORDPRESS_DEBUG: true
+  PHARMASURE_ENVIRONMENT: development
+
+# Services to monitor
+services:
+  - wordpress
+  - db
+  - redis
+
+# Documentation
+documentation:
+  - INTENT.md
+  - DEVELOPMENT.md

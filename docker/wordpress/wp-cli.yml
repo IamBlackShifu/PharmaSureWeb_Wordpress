@@ -1,0 +1,28 @@
+# WP-CLI Configuration for PharmaSure
+
+# Path to WordPress installation
+path: /var/www/html
+
+# Database settings
+[db]
+host: db
+user: pharmasure
+pass: pharmasure_pass
+db: pharmasure
+port: 3306
+charset: utf8mb4
+
+# User to run commands as
+user: www-data
+
+# Enable network commands for Multisite
+network: true
+
+# Skip SSL verification for development (remove in production)
+skip-plugins:
+  - akismet
+  - hello
+
+# Custom command auto-loading
+require:
+  - /var/www/html/wp-content/plugins/pharmasure-core/cli/commands.php

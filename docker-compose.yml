@@ -1,0 +1,176 @@
+version: '3.9'
+
+services:
+  # MySQL Database with proper configuration for WordPress Multisite
+  db:
+    image: mysql:8.0
+    container_name: pharmasure-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-pharmasure_root}
+      MYSQL_DATABASE: ${DB_NAME:-pharmasure}
+      MYSQL_USER: ${DB_USER:-pharmasure}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-pharmasure_pass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+      - ./docker/mysql/conf:/etc/mysql/conf.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
+      interval: 10s
+    networks:
+      - pharmasure-network
+
+  # WordPress with PHP-FPM for development
+  wordpress:
+    build:
+      context: ./docker/wordpress
+      dockerfile: Dockerfile
+    container_name: pharmasure-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${DB_NAME:-pharmasure}
+      WORDPRESS_DB_USER: ${DB_USER:-pharmasure}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:-pharmasure_pass}
+      WORDPRESS_DEBUG: ${WORDPRESS_DEBUG:-true}
+      WORDPRESS_DEBUG_LOG: /var/www/html/wp-content/debug.log
+      WORDPRESS_DEBUG_DISPLAY: ${WORDPRESS_DEBUG_DISPLAY:-false}
+      WP_ALLOW_MULTISITE: 1
+      WP_HOME: ${WP_HOME:-http://localhost:8080}
+      WP_SITEURL: ${WP_SITEURL:-http://localhost:8080}
+    ports:
+      - "9000:9000"
+    volumes:
+      - wp_data:/var/www/html
+      - ./wp-content/plugins:/var/www/html/wp-content/plugins
+      - ./wp-content/themes:/var/www/html/wp-content/themes
+      - ./docker/wordpress/php.ini:/usr/local/etc/php/conf.d/pharmasure.ini:ro
+      - ./docker/wordpress/wp-cli.yml:/home/www-data/.wp-cli/config.yml:ro
+    networks:
+      - pharmasure-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/wp-json/"]
+      timeout: 10s
+      retries: 5
+      interval: 15s
+
+  # Nginx reverse proxy for local development
+  nginx:
+    image: nginx:alpine
+    container_name: pharmasure-nginx
+    restart: unless-stopped
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - wp_data:/var/www/html:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/logs:/var/log/nginx
+    networks:
+      - pharmasure-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/wp-admin/"]
+      timeout: 10s
+      retries: 5
+      interval: 15s
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: pharmasure-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - pharmasure-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 5s
+      retries: 5
+      interval: 10s
+
+  # MailHog for testing email delivery
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: pharmasure-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - pharmasure-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8025"]
+      timeout: 5s
+      retries: 5
+      interval: 10s
+
+  # PHPMyAdmin for database debugging
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: pharmasure-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_USER: ${DB_USER:-pharmasure}
+      PMA_PASSWORD: ${DB_PASSWORD:-pharmasure_pass}
+      PMA_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-pharmasure_root}
+    ports:
+      - "8081:80"
+    networks:
+      - pharmasure-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/index.php"]
+      timeout: 10s
+      retries: 5
+      interval: 15s
+
+  # WP-CLI for command-line WordPress operations
+  wpcli:
+    image: wordpress:cli-php8.2
+    container_name: pharmasure-wpcli
+    depends_on:
+      - db
+      - wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ./wp-content/plugins:/var/www/html/wp-content/plugins
+      - ./wp-content/themes:/var/www/html/wp-content/themes
+      - ./docker/wordpress/wp-cli.yml:/home/www-data/.wp-cli/config.yml:ro
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: ${DB_NAME:-pharmasure}
+      WORDPRESS_DB_USER: ${DB_USER:-pharmasure}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:-pharmasure_pass}
+    networks:
+      - pharmasure-network
+    user: "33:33"
+    command: tail -f /dev/null
+
+volumes:
+  db_data:
+    driver: local
+  wp_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  pharmasure-network:
+    driver: bridge
