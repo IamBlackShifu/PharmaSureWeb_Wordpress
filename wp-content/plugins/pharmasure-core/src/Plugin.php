@@ -99,7 +99,8 @@ class Plugin {
 class Activation {
     public static function activate() {
         // Run migrations on plugin activation
-        update_option( PHARMASURE_CORE_VERSION, true );
+        update_option( 'pharmasure_core_version', PHARMASURE_CORE_VERSION );
+        ( new DatabaseMigrations() )->migrate();
     }
 
     public static function deactivate() {

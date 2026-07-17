@@ -58,7 +58,8 @@ class DatabaseMigrations {
 
         $pending = [];
         foreach ( $all_migrations as $file ) {
-            if ( ! in_array( $file, $run_migrations, true ) && substr( $file, -4 ) === '.php' ) {
+            $migration_name = basename( $file, '.php' );
+            if ( ! in_array( $migration_name, $run_migrations, true ) && substr( $file, -4 ) === '.php' ) {
                 $pending[] = $file;
             }
         }
@@ -133,8 +134,9 @@ class DatabaseMigrations {
                 return new \WP_Error( 'file_not_found', "Migration file not found: $migration_file" );
             }
 
-            // Extract class name from file (assumed: class_name == file_name without extension)
-            $class_name = 'PharmaSure\\Migrations\\' . $this->camel_case( $migration_name );
+            // Timestamp prefixes order migrations but are not part of PHP class names.
+            $class_suffix = preg_replace( '/^\d{4}_\d{2}_\d{2}_\d{6}_/', '', $migration_name );
+            $class_name   = 'PharmaSure\\Migrations\\' . $this->camel_case( $class_suffix );
             
             require_once $migration_path;
 
@@ -161,7 +163,7 @@ class DatabaseMigrations {
                 'status' => 'completed',
                 'execution_time_ms' => $execution_time,
             ];
-        } catch ( \Exception $e ) {
+        } catch ( \Throwable $e ) {
             $execution_time = (int) ( ( microtime( true ) - $start_time ) * 1000 );
             $this->record_migration_failure( $migration_name, $e->getMessage(), $execution_time );
             

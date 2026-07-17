@@ -13,12 +13,14 @@ class Autoloader {
     }
 
     public function autoload( $class ) {
-        if ( strpos( $class, 'PharmaSure\\' ) !== 0 ) {
+        $prefix = __NAMESPACE__ . '\\';
+
+        if ( strpos( $class, $prefix ) !== 0 ) {
             return;
         }
 
         $path = PHARMASURE_CORE_PATH . 'src/';
-        $class = str_replace( 'PharmaSure\\', '', $class );
+        $class = substr( $class, strlen( $prefix ) );
         $class = str_replace( '\\', '/', $class );
         
         $file = $path . $class . '.php';

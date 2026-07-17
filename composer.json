@@ -1,0 +1,45 @@
+{
+  "name": "pharmasure/wordpress",
+  "description": "PharmaSure - Cloud-First Multi-Tenant Pharmacy Management System",
+  "type": "wordpress-site",
+  "license": "proprietary",
+  "authors": [
+    {
+      "name": "PharmaSure Team",
+      "email": "dev@pharmasure.local"
+    }
+  ],
+  "require": {
+    "php": ">=8.2",
+    "composer/installers": "^2.0",
+    "wpackagist-plugin/wp-cli": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0",
+    "phpcompatibility/php-compatibility": "^9.0"
+  },
+  "config": {
+    "platform": {
+      "php": "8.2"
+    },
+    "optimize-autoloader": true,
+    "sort-packages": true
+  },
+  "scripts": {
+    "post-install-cmd": [
+      "@php scripts/install.php"
+    ],
+    "post-update-cmd": [
+      "@php scripts/install.php"
+    ],
+    "migrate": "@php -r \"if (file_exists('wp-load.php')) { require 'wp-load.php'; do_action('pharmasure_migrate'); }\"",
+    "test-isolation": "@php scripts/test-isolation.php",
+    "test-license": "@php scripts/test-license.php"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://wpackagist.org"
+    }
+  ]
+}

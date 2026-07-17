@@ -1,12 +1,16 @@
 <?php
 /**
- * PharmaSure Core Plugin Bootstrap
- * 
- * Shared functionality, database versioning, capabilities, 
- * tenant context, REST conventions, jobs, events, and audit foundation.
- * 
+ * Plugin Name: PharmaSure Core
+ * Plugin URI: https://pharmasure.co.zw/
+ * Description: Shared bootstrap, migrations, capabilities, tenant context, licensing and audit foundations for PharmaSure.
  * @package PharmaSure_Core
  * @version 1.0.0
+ * Version: 1.0.0
+ * Requires at least: 6.4
+ * Requires PHP: 8.2
+ * Author: Infinity Lines of Code Pvt Ltd
+ * Text Domain: pharmasure-core
+ * Network: true
  */
 
 namespace PharmaSure\Core;
@@ -26,9 +30,12 @@ define( 'PHARMASURE_TABLE_PREFIX', 'ps_' );
 require_once PHARMASURE_CORE_PATH . 'src/Autoloader.php';
 new Autoloader();
 
+// Activation hooks run before plugins_loaded, so their callback must be loaded now.
+require_once PHARMASURE_CORE_PATH . 'src/Plugin.php';
+
 // Plugin activation/deactivation hooks
-register_activation_hook( __FILE__, [ '\PharmaSure\Core\Activation', 'activate' ] );
-register_deactivation_hook( __FILE__, [ '\PharmaSure\Core\Activation', 'deactivate' ] );
+register_activation_hook( __FILE__, array( '\PharmaSure\Core\Activation', 'activate' ) );
+register_deactivation_hook( __FILE__, array( '\PharmaSure\Core\Activation', 'deactivate' ) );
 
 // Initialize the plugin
 add_action( 'plugins_loaded', [ '\PharmaSure\Core\Plugin', 'init' ], 10 );

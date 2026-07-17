@@ -331,4 +331,23 @@ For questions or issues:
 ---
 
 **Latest Update**: 2026-01-16  
-**Status**: Foundation phase complete. Ready for module development.
+**Status**: Foundation phase complete. Operational module development is active.
+
+### Operational module progress
+
+#### Inventory 1.1.0
+
+Implemented and integration-tested:
+
+- Versioned catalogue, supplier, receipt, batch, balance, and immutable movement tables.
+- Composite tenant keys for SKU, supplier name, branch/drug balance, and branch/drug/batch identity.
+- Tenant-scoped catalogue search with bounded pagination.
+- Server-side tenant ownership checks for drugs, suppliers, and branches.
+- Explicit branch selection through the validated `X-PharmaSure-Branch` request header.
+- Atomic stock receipts: receipt, lines, batch quantities, aggregate balance, and ledger movements commit or roll back together.
+- Rejection of expired lots, invalid quantities, missing scope, and cross-tenant references.
+- Capability-specific REST permissions for viewing, catalogue management, and stock receiving.
+- Initial WordPress admin inventory overview and responsive admin styling.
+- Two-tenant integration coverage in `scripts/test-inventory.php`.
+
+Still required for operational parity: catalogue editing/import, stock adjustment approval, transfers, stock takes, FEFO allocation/consumption, purchase orders, detailed admin forms, exports, and print documents.

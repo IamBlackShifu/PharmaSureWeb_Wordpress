@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/theme.json",
+  "version": 3,
+  "settings": {
+    "appearanceTools": true,
+    "layout": { "contentSize": "760px", "wideSize": "1200px" },
+    "color": {
+      "defaultPalette": false,
+      "palette": [
+        { "slug": "ink", "name": "Ink", "color": "#0f3748" },
+        { "slug": "primary", "name": "PharmaSure Teal", "color": "#087f8c" },
+        { "slug": "accent", "name": "Clinical Green", "color": "#20a46b" },
+        { "slug": "mist", "name": "Mist", "color": "#edf7f6" },
+        { "slug": "white", "name": "White", "color": "#ffffff" }
+      ]
+    },
+    "spacing": { "units": ["px", "rem", "vw", "%"] },
+    "typography": {
+      "fluid": true,
+      "fontFamilies": [
+        { "slug": "sans", "name": "System Sans", "fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }
+      ],
+      "fontSizes": [
+        { "slug": "small", "size": "0.875rem", "name": "Small" },
+        { "slug": "medium", "size": "1rem", "name": "Medium" },
+        { "slug": "large", "size": "1.5rem", "name": "Large" },
+        { "slug": "x-large", "size": "clamp(2.25rem, 6vw, 4.75rem)", "name": "Extra Large" }
+      ]
+    }
+  },
+  "styles": {
+    "color": { "background": "var:preset|color|white", "text": "var:preset|color|ink" },
+    "spacing": { "blockGap": "1.5rem" },
+    "typography": { "fontFamily": "var:preset|font-family|sans", "lineHeight": "1.6" },
+    "elements": {
+      "button": { "border": { "radius": "0.45rem" }, "color": { "background": "var:preset|color|primary", "text": "var:preset|color|white" }, "typography": { "fontWeight": "650" } },
+      "heading": { "typography": { "fontWeight": "700", "lineHeight": "1.15" } },
+      "link": { "color": { "text": "var:preset|color|primary" } }
+    }
+  },
+  "templateParts": [
+    { "area": "header", "name": "header", "title": "Header" },
+    { "area": "footer", "name": "footer", "title": "Footer" }
+  ]
+}
