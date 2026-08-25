@@ -48,7 +48,8 @@ class Plugin {
 	public static function init() {
 		add_action( 'rest_api_init', [ Rest\LicenseController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\SubscriptionController::class, 'register_routes' ] );
-		add_action( 'admin_menu', [ Admin\LicenseAdmin::class, 'register_pages' ] );
+		// Register after Inventory creates the shared PharmaSure parent menu.
+		add_action( 'admin_menu', [ Admin\LicenseAdmin::class, 'register_pages' ], 30 );
 	}
 }
 
@@ -99,9 +100,9 @@ class LicenseService {
 	public function get_license_entitlements( $license_id ) {
 		return $this->wpdb->get_results(
 			$this->wpdb->prepare(
-				"SELECT e.*, le.quota_value FROM {$this->wpdb->prefix}ps_entitlements e
-				 JOIN {$this->wpdb->prefix}ps_licence_entitlements le ON e.id = le.entitlement_id
-				 WHERE le.licence_id = %d",
+				"SELECT entitlement_key AS `key`, is_active
+				 FROM {$this->wpdb->prefix}ps_licence_entitlements
+				 WHERE licence_id = %d AND is_active = 1",
 				$license_id
 			)
 		);
@@ -136,22 +137,24 @@ class LicenseService {
 			return [ 'used' => 0, 'limit' => 0, 'available' => false ];
 		}
 
-		$usage = $this->wpdb->get_row(
+		$quota = $this->wpdb->get_row(
 			$this->wpdb->prepare(
-				"SELECT lq.quota_value, um.usage_count FROM {$this->wpdb->prefix}ps_licence_quotas lq
-				 LEFT JOIN {$this->wpdb->prefix}ps_usage_meters um ON lq.metre_id = um.id
-				 WHERE lq.licence_id = %d AND lq.metre_id = (SELECT id FROM {$this->wpdb->prefix}ps_usage_meters WHERE tenant_id = %d AND key = %s)",
-				$license->id,
+				"SELECT lq.limit_value, COALESCE(um.amount, 0) AS used
+				 FROM {$this->wpdb->prefix}ps_licence_quotas lq
+				 LEFT JOIN {$this->wpdb->prefix}ps_usage_meters um
+				   ON um.tenant_id = %d AND um.meter_key = lq.quota_key
+				 WHERE lq.licence_id = %d AND lq.quota_key = %s",
 				$tenant_id,
+				$license->id,
 				$quota_key
 			)
 		);
 
-		if ( $usage ) {
+		if ( $quota ) {
 			return [
-				'used'      => intval( $usage->usage_count ),
-				'limit'     => intval( $usage->quota_value ),
-				'available' => $usage->usage_count < $usage->quota_value,
+				'used'      => intval( $quota->used ),
+				'limit'     => intval( $quota->limit_value ),
+				'available' => $quota->used < $quota->limit_value,
 			];
 		}
 
@@ -162,49 +165,8 @@ class LicenseService {
 	 * Issue offline license token (JWT)
 	 */
 	public function issue_offline_token( $tenant_id, $device_id, $valid_days = 7 ) {
-		$license = $this->get_license( $tenant_id );
-
-		if ( ! $license || $license->status !== 'active' ) {
-			return new \WP_Error( 'invalid_license', 'No active license to generate token from' );
-		}
-
-		$issued_at = time();
-		$expires_at = $issued_at + ( $valid_days * DAY_IN_SECONDS );
-
-		$payload = [
-			'iss'          => home_url(),
-			'tenant_id'    => $tenant_id,
-			'device_id'    => $device_id,
-			'license_id'   => $license->id,
-			'iat'          => $issued_at,
-			'exp'          => $expires_at,
-			'entitlements' => array_map( fn( $e ) => $e->key, $license->entitlements ),
-		];
-
-		// Sign token with private key
-		$private_key = getenv( 'PHARMASURE_LICENSE_PRIVATE_KEY' );
-		if ( ! $private_key ) {
-			return new \WP_Error( 'no_signing_key', 'License signing key not configured' );
-		}
-
-		// In production, use proper JWT library. This is simplified:
-		$token = json_encode( $payload );
-		$signature = hash_hmac( 'sha256', $token, $private_key );
-		$jwt = base64_encode( $token ) . '.' . $signature;
-
-		// Store token issuance in database
-		$this->wpdb->insert(
-			$this->wpdb->prefix . 'ps_token_issuance_log',
-			[
-				'tenant_id'  => $tenant_id,
-				'device_id'  => $device_id,
-				'token_hash' => hash( 'sha256', $jwt ),
-				'issued_at'  => gmdate( 'Y-m-d H:i:s', $issued_at ),
-				'expires_at' => gmdate( 'Y-m-d H:i:s', $expires_at ),
-			]
-		);
-
-		return $jwt;
+		$manager = new \PharmaSure\Core\LicenseManager( $tenant_id );
+		return $manager->issue_offline_token( $device_id, $valid_days );
 	}
 }
 
@@ -341,7 +303,7 @@ class LicenseAdmin {
 	public static function render_licenses() {
 		global $wpdb;
 		$licenses = $wpdb->get_results(
-			"SELECT l.*, t.legal_name FROM {$wpdb->prefix}ps_licences l
+			"SELECT l.*, t.name AS tenant_name FROM {$wpdb->prefix}ps_licences l
 			 JOIN {$wpdb->prefix}ps_tenants t ON l.tenant_id = t.id
 			 ORDER BY l.created_at DESC"
 		);
@@ -362,7 +324,7 @@ class LicenseAdmin {
 					<?php
 					foreach ( $licenses as $license ) {
 						echo '<tr>';
-						echo '<td>' . esc_html( $license->legal_name ) . '</td>';
+						echo '<td>' . esc_html( $license->tenant_name ) . '</td>';
 						echo '<td>-</td>';
 						echo '<td><span class="badge">' . esc_html( $license->status ) . '</span></td>';
 						echo '<td>' . esc_html( mysql2date( 'Y-m-d', $license->expires_at ) ) . '</td>';

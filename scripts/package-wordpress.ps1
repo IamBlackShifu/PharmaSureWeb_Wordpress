@@ -20,6 +20,12 @@ $packages = @(
 	@{ Type = 'plugins'; Name = 'pharmasure-licensing' },
 	@{ Type = 'plugins'; Name = 'pharmasure-inventory' },
 	@{ Type = 'plugins'; Name = 'pharmasure-clinical' },
+	@{ Type = 'plugins'; Name = 'pharmasure-pos' },
+	@{ Type = 'plugins'; Name = 'pharmasure-claims' },
+	@{ Type = 'plugins'; Name = 'pharmasure-reporting' },
+	@{ Type = 'plugins'; Name = 'pharmasure-integrations' },
+	@{ Type = 'plugins'; Name = 'pharmasure-offline' },
+	@{ Type = 'plugins'; Name = 'pharmasure-print' },
 	@{ Type = 'themes'; Name = 'pharmasure-portal' }
 )
 

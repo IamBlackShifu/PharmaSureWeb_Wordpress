@@ -18,19 +18,19 @@ class TenantService {
 	 */
 	public function create_tenant( array $data ) {
 		$required = [ 'legal_name', 'trading_name', 'slug', 'owner_email', 'country', 'currency' ];
-		$missing  = array_filter( $required, fn( $k ) => empty( $data[ $k ] ), ARRAY_FILTER_USE_KEY );
+		$missing  = array_values( array_filter( $required, fn( $field ) => empty( $data[ $field ] ) ) );
 
 		if ( ! empty( $missing ) ) {
 			return new \WP_Error(
 				'missing_fields',
-				'Missing required fields: ' . implode( ', ', array_keys( $missing ) )
+				'Missing required fields: ' . implode( ', ', $missing )
 			);
 		}
 
 		// Validate slug is unique
 		$exists = $this->wpdb->get_var(
 			$this->wpdb->prepare(
-				"SELECT id FROM {$this->table} WHERE slug = %s AND status != 'deleted'",
+				"SELECT id FROM {$this->table} WHERE slug = %s AND status != 'archived'",
 				$data['slug']
 			)
 		);
@@ -41,16 +41,15 @@ class TenantService {
 
 		// Create tenant record
 		$tenant_data = [
-			'legal_name'          => sanitize_text_field( $data['legal_name'] ),
+			'name'                => sanitize_text_field( $data['legal_name'] ),
 			'trading_name'        => sanitize_text_field( $data['trading_name'] ),
 			'slug'                => sanitize_key( $data['slug'] ),
-			'owner_email'         => sanitize_email( $data['owner_email'] ),
+			'primary_contact_email' => sanitize_email( $data['owner_email'] ),
 			'country'             => sanitize_text_field( $data['country'] ?? '' ),
 			'timezone'            => sanitize_text_field( $data['timezone'] ?? 'UTC' ),
 			'currency'            => sanitize_text_field( $data['currency'] ?? 'USD' ),
-			'plan_type'           => sanitize_text_field( $data['plan_type'] ?? 'starter' ),
 			'status'              => 'active',
-			'trial_ends_at'       => isset( $data['trial_days'] ) ? gmdate( 'Y-m-d H:i:s', strtotime( "+{$data['trial_days']} days" ) ) : null,
+			'onboarded_at'        => current_time( 'mysql', true ),
 			'created_at'          => current_time( 'mysql', true ),
 			'created_by'          => get_current_user_id(),
 		];
@@ -117,7 +116,7 @@ class TenantService {
 	public function get_tenant_by_slug( $slug ) {
 		return $this->wpdb->get_row(
 			$this->wpdb->prepare(
-				"SELECT * FROM {$this->table} WHERE slug = %s AND status != 'deleted'",
+				"SELECT * FROM {$this->table} WHERE slug = %s AND status != 'archived'",
 				$slug
 			),
 			ARRAY_A
@@ -133,8 +132,21 @@ class TenantService {
 			return new \WP_Error( 'unauthorized', 'Not authorized to update this tenant' );
 		}
 
-		$allowed_fields = [ 'legal_name', 'trading_name', 'timezone', 'currency', 'address', 'phone', 'status' ];
-		$update_data    = array_intersect_key( $data, array_flip( $allowed_fields ) );
+		$field_map = [
+			'legal_name' => 'name',
+			'trading_name' => 'trading_name',
+			'timezone' => 'timezone',
+			'currency' => 'currency',
+			'address' => 'address_line_1',
+			'phone' => 'primary_contact_phone',
+			'status' => 'status',
+		];
+		$update_data = [];
+		foreach ( $field_map as $input => $column ) {
+			if ( array_key_exists( $input, $data ) ) {
+				$update_data[ $column ] = sanitize_text_field( $data[ $input ] );
+			}
+		}
 
 		if ( isset( $update_data['status'] ) && $update_data['status'] === 'suspended' ) {
 			// Log suspension event
@@ -165,8 +177,9 @@ class TenantService {
 		$where_params = [ $status ];
 
 		if ( ! empty( $args['search'] ) ) {
-			$where          .= " AND (legal_name LIKE %s OR slug LIKE %s)";
+			$where          .= " AND (name LIKE %s OR trading_name LIKE %s OR slug LIKE %s)";
 			$search_term     = '%' . $this->wpdb->esc_like( $args['search'] ) . '%';
+			$where_params[]  = $search_term;
 			$where_params[]  = $search_term;
 			$where_params[]  = $search_term;
 		}
@@ -197,13 +210,27 @@ class TenantService {
 		$user = get_user_by( 'email', $owner_email );
 
 		if ( ! $user ) {
+			$base_username = sanitize_user( explode( '@', $owner_email )[0], true );
+			$base_username = $base_username ?: 'tenant-owner';
+			$username      = $base_username;
+			$suffix        = 0;
+			while ( username_exists( $username ) ) {
+				$username = $base_username . '-' . $tenant_id . ( $suffix ? '-' . $suffix : '' );
+				++$suffix;
+			}
 			$user_id = wp_create_user(
-				sanitize_user( explode( '@', $owner_email )[0] ),
+				$username,
 				wp_generate_password(),
 				$owner_email
 			);
 			if ( is_wp_error( $user_id ) ) {
 				return $user_id;
+			}
+			// Network-level onboarding must not make a tenant owner a member of
+			// the platform/root site. The tenant provisioning workflow attaches
+			// the owner only to their mapped tenant site.
+			if ( is_multisite() && is_main_site() ) {
+				remove_user_from_blog( $user_id, get_current_blog_id() );
 			}
 		} else {
 			$user_id = $user->ID;
@@ -217,10 +244,12 @@ class TenantService {
 				'tenant_id'   => $tenant_id,
 				'user_id'     => $user_id,
 				'role'        => 'owner',
-				'status'      => 'active',
+				'is_admin'    => 1,
+				'is_active'   => 1,
+				'activated_at'=> current_time( 'mysql', true ),
 				'created_at'  => current_time( 'mysql', true ),
 			],
-			[ '%d', '%d', '%s', '%s', '%s' ]
+			[ '%d', '%d', '%s', '%d', '%d', '%s', '%s' ]
 		);
 
 		return $user_id;

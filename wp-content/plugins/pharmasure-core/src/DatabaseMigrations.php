@@ -19,6 +19,25 @@ class DatabaseMigrations {
     }
 
     /**
+     * Put each dbDelta field or index definition on its own line.
+     *
+     * dbDelta treats physical lines as schema definitions. Several modules
+     * intentionally keep CREATE statements compact, so normalize only commas
+     * followed by a new column or index definition; commas inside composite
+     * indexes and DECIMAL declarations remain untouched.
+     */
+    public static function normalize_dbdelta_sql( $sql ) {
+        if ( is_array( $sql ) ) {
+            return array_map( [ static::class, 'normalize_dbdelta_sql' ], $sql );
+        }
+        return preg_replace(
+			'/,\s*(?=(?:(?:PRIMARY|UNIQUE)\s+KEY\b|KEY\s+[A-Za-z_][A-Za-z0-9_]*\s*\(|[A-Za-z_][A-Za-z0-9_]*\s+(?:BIGINT|INT|TINYINT|VARCHAR|CHAR|DECIMAL|LONGTEXT|TEXT|DATETIME|TIMESTAMP|DATE)\b))/i',
+            ",\n",
+            (string) $sql
+        );
+    }
+
+    /**
      * Run pending migrations
      * 
      * @return array Migration results

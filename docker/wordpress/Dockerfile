@@ -1,4 +1,4 @@
-FROM wordpress:6.4-php8.2-fpm
+FROM wordpress:7.0.1-php8.2-fpm
 
 # Install all dependencies in single RUN to reduce layers
 RUN apt-get update && apt-get install -y --no-install-recommends \

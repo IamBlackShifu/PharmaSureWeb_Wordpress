@@ -4,7 +4,7 @@ Theme URI: https://pharmasure.co.zw/
 Author: Infinity Lines of Code Pvt Ltd
 Author URI: https://infinitylinesofcode.com/
 Description: The presentation layer for the PharmaSure pharmacy management platform.
-Version: 1.1.0
+Version: 1.2.0
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.2
@@ -17,7 +17,7 @@ License: Proprietary
 html { scroll-behavior: smooth; }
 body { text-wrap: pretty; overflow-x: hidden; }
 a { transition: color .2s ease, background-color .2s ease, transform .2s ease; }
-a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--ps-green); outline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--ps-green); outline-offset: 3px; }
 .wp-site-blocks { min-height: 100vh; }
 .portal-header { position: sticky; top: 0; z-index: 50; padding: .85rem clamp(1rem,4vw,3rem); border-bottom: 1px solid rgba(11,41,55,.08); background: rgba(255,255,255,.92); backdrop-filter: blur(16px); }
 .admin-bar .portal-header { top: 32px; }
@@ -28,6 +28,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid 
 .portal-nav-cta a { padding: .6rem 1rem !important; border-radius: .55rem; color: #fff !important; background: var(--ps-navy); }
 .portal-hero { position: relative; isolation: isolate; min-height: 760px; padding: clamp(5rem,10vw,8rem) clamp(1rem,4vw,3rem); overflow: hidden; background: radial-gradient(circle at 83% 15%,rgba(32,164,107,.18),transparent 28%),radial-gradient(circle at 5% 90%,rgba(8,127,140,.13),transparent 30%),linear-gradient(145deg,#f7fbfb 0%,#edf7f6 55%,#fff 100%); }
 .portal-hero::after { position: absolute; z-index: -1; top: 8%; right: -11rem; width: 35rem; height: 35rem; border: 1px solid rgba(8,127,140,.12); border-radius: 50%; content: ""; box-shadow: 0 0 0 5rem rgba(255,255,255,.25),0 0 0 10rem rgba(255,255,255,.18); }
+.portal-hero .wp-block-columns,.portal-hero .wp-block-column { min-width: 0; }
 .portal-eyebrow { display: inline-flex; width: fit-content; padding: .45rem .75rem; border: 1px solid rgba(8,127,140,.18); border-radius: 999px; color: var(--ps-teal); background: rgba(255,255,255,.65); font-size: .76rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .portal-hero h1 { max-width: 760px; margin: 1.3rem 0 1.5rem; font-size: clamp(3rem,7vw,6.1rem); letter-spacing: -.065em; line-height: .96; }
 .portal-hero h1 em { color: var(--ps-teal); font-style: normal; }
@@ -35,7 +36,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid 
 .portal-actions { margin-top: 2rem; }
 .portal-actions .wp-block-button__link { padding: .9rem 1.35rem; box-shadow: 0 10px 25px rgba(8,127,140,.2); }
 .portal-actions .is-style-outline .wp-block-button__link { border-color: var(--ps-line); color: var(--ps-navy); background: rgba(255,255,255,.75); box-shadow: none; }
-.portal-dashboard { position: relative; padding: 1rem; border: 1px solid rgba(255,255,255,.7); border-radius: 1.35rem; background: rgba(255,255,255,.72); box-shadow: 0 28px 80px rgba(11,41,55,.15); backdrop-filter: blur(18px); }
+.portal-dashboard { position: relative; width: 100%; max-width: 100%; padding: 1rem; border: 1px solid rgba(255,255,255,.7); border-radius: 1.35rem; background: rgba(255,255,255,.72); box-shadow: 0 28px 80px rgba(11,41,55,.15); backdrop-filter: blur(18px); }
 .portal-dashboard__top { display: flex; align-items: center; justify-content: space-between; padding: .35rem .3rem 1rem; color: var(--ps-muted); font-size: .75rem; }
 .portal-live { display: inline-flex; align-items: center; gap: .4rem; color: var(--ps-green); font-weight: 750; }
 .portal-live::before { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; content: ""; box-shadow: 0 0 0 4px rgba(32,164,107,.12); }
@@ -81,6 +82,6 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid 
 .portal-footer { margin-top: 0; padding: 3rem clamp(1rem,4vw,3rem); }
 .portal-footer .wp-block-site-title { margin: 0; }
 @media (max-width: 900px) { .portal-hero .wp-block-columns { flex-wrap: wrap !important; } .portal-hero .wp-block-column { flex-basis: 100% !important; } .portal-card-grid { grid-template-columns: repeat(2,1fr); } .portal-workflow { grid-template-columns: repeat(2,1fr); } .portal-roadmap { grid-template-columns: 1fr; } }
-@media (max-width: 600px) { .admin-bar .portal-header { top: 0; } .portal-hero { min-height: auto; padding-top: 4rem; } .portal-hero h1 { font-size: 3.15rem; } .portal-dashboard { margin-top: 2rem; } .portal-proof-grid,.portal-card-grid,.portal-workflow { grid-template-columns: 1fr; } .portal-proof-grid { gap: .7rem; } }
+@media (max-width: 600px) { .admin-bar .portal-header { top: 0; } .wp-site-blocks .alignfull { width: 100% !important; max-width: 100% !important; margin-right: 0 !important; margin-left: 0 !important; } .portal-hero { min-height: auto; padding: 3.5rem 1rem; } .portal-hero > .wp-block-columns { display: block !important; width: 100% !important; max-width: 100% !important; margin-right: 0 !important; margin-left: 0 !important; } .portal-hero > .wp-block-columns > .wp-block-column { width: 100% !important; max-width: 100% !important; flex: none !important; } .portal-hero h1 { max-width: 100%; font-size: clamp(2.35rem,12vw,3rem); letter-spacing: -.045em; line-height: 1; overflow-wrap: anywhere; } .portal-lead { max-width: 100%; font-size: 1.05rem; overflow-wrap: anywhere; } .portal-actions { flex-direction: column; align-items: stretch; width: 100%; } .portal-actions .wp-block-button,.portal-actions .wp-block-button__link { width: 100%; } .portal-actions .wp-block-button__link { text-align: center; } .portal-dashboard { margin-top: 2rem; padding: .75rem; } .portal-dashboard__top { align-items: flex-start; flex-wrap: wrap; gap: .5rem; } .portal-metrics,.portal-proof-grid,.portal-card-grid,.portal-workflow { grid-template-columns: 1fr; } .portal-proof-grid { gap: .7rem; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
 @media print { header,footer,.no-print { display:none!important; } body { color:#000!important;background:#fff!important; } .wp-site-blocks { padding:0!important; } }

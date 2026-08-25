@@ -32,20 +32,18 @@ class LicenseManager {
      * @return array License data or WP_Error
      */
     public function validate_license( $offline_token = null ) {
-        // Check server-side cache first (strongest validation)
+        // An explicitly supplied token must be validated before consulting the
+        // online licence cache. Explicit tokens fail closed: a bad signature,
+        // tenant mismatch, revoked token, or invalid claim must never be masked
+        // by an otherwise valid database licence.
+        if ( $offline_token ) {
+            return $this->validate_offline_token( $offline_token );
+        }
+
+        // Check server-side cache for normal online validation.
         $cached = $this->get_cached_license();
         if ( ! empty( $cached ) ) {
             return $cached;
-        }
-
-        // If offline token provided, validate cryptographically
-        if ( $offline_token ) {
-            $result = $this->validate_offline_token( $offline_token );
-            if ( is_wp_error( $result ) ) {
-                // Fall back to server check
-                return $this->validate_from_database();
-            }
-            return $result;
         }
 
         // Default: validate from authoritative database
@@ -191,7 +189,7 @@ class LicenseManager {
         
         if ( $license['expires_at'] ) {
             $expires = new \DateTime( $license['expires_at'] );
-            $grace_days = (int) $license['grace_period_days'] ?? 14;
+            $grace_days = (int) ( $license['grace_period_days'] ?? 14 );
             $grace_until = ( clone $expires )->modify( "+{$grace_days} days" );
             
             if ( $now > $grace_until ) {
@@ -208,6 +206,24 @@ class LicenseManager {
         return $license['status'] === 'trial' ? 'trial' : 'active';
     }
 
+	/**
+	 * Fail closed unless the tenant has a valid licence and entitlement.
+	 *
+	 * @return array|\WP_Error Validated licence or authorization error.
+	 */
+	public function enforce_entitlement( $entitlement_key, $offline_token = null ) {
+		$entitlement_key = sanitize_key( $entitlement_key );
+		$license = $this->validate_license( $offline_token );
+		if ( is_wp_error( $license ) ) {
+			return $license;
+		}
+		if ( '' === $entitlement_key || ! in_array( $entitlement_key, $license['entitlements'] ?? array(), true ) ) {
+			do_action( 'pharmasure_audit_log', array( 'tenant_id' => $this->tenant_id, 'action' => 'licence.entitlement_denied', 'object_type' => 'entitlement', 'status' => 'failure', 'details' => array( 'entitlement' => $entitlement_key, 'licence_id' => (int) ( $license['id'] ?? 0 ) ) ) );
+			return new \WP_Error( 'entitlement_required', 'The current licence does not include this feature.', array( 'status' => 403 ) );
+		}
+		return $license;
+	}
+
     /**
      * Get license entitlements from database
      * 
@@ -216,10 +232,10 @@ class LicenseManager {
      */
     private function get_license_entitlements( $license_id ) {
         global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'license_entitlements';
+        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'licence_entitlements';
         
         return $wpdb->get_col( $wpdb->prepare(
-            "SELECT entitlement_key FROM $table WHERE license_id = %d AND is_active = 1",
+            "SELECT entitlement_key FROM $table WHERE licence_id = %d AND is_active = 1",
             $license_id
         ) );
     }
@@ -232,10 +248,10 @@ class LicenseManager {
      */
     private function get_license_quotas( $license_id ) {
         global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'license_quotas';
+        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'licence_quotas';
         
         $quotas = $wpdb->get_results( $wpdb->prepare(
-            "SELECT quota_key, limit_value FROM $table WHERE license_id = %d",
+            "SELECT quota_key, limit_value FROM $table WHERE licence_id = %d",
             $license_id
         ) );
 
@@ -298,7 +314,7 @@ class LicenseManager {
      */
     private function get_public_key( $key_id ) {
         global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'license_signing_keys';
+        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'licence_signing_keys';
         
         $key_data = $wpdb->get_row( $wpdb->prepare(
             "SELECT public_key FROM $table WHERE key_id = %s AND is_active = 1",
@@ -387,7 +403,9 @@ class LicenseManager {
         $data_to_sign = "{$header_encoded}.{$payload_encoded}";
 
         $private_key = $this->get_private_key();
-        openssl_sign( $data_to_sign, $signature, $private_key, OPENSSL_ALGO_SHA256 );
+        if ( ! openssl_sign( $data_to_sign, $signature, $private_key, OPENSSL_ALGO_SHA256 ) ) {
+            throw new \RuntimeException( 'Unable to sign offline license token' );
+        }
         
         $signature_encoded = rtrim( strtr( base64_encode( $signature ), '+/', '-_' ), '=' );
         
@@ -402,9 +420,15 @@ class LicenseManager {
     private function get_private_key() {
         $key_pem = get_option( 'pharmasure_license_signing_key_private' );
         if ( ! $key_pem ) {
-            wp_die( 'License signing key not configured' );
+            throw new \RuntimeException( 'License signing key not configured' );
         }
-        return openssl_pkey_get_private( $key_pem );
+
+        $private_key = openssl_pkey_get_private( $key_pem );
+        if ( ! $private_key ) {
+            throw new \RuntimeException( 'License signing key is invalid' );
+        }
+
+        return $private_key;
     }
 
     /**
@@ -415,28 +439,17 @@ class LicenseManager {
      * @return void
      */
     private function log_token_issuance( $device_id, $token ) {
-        global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'audit_events';
-        
-        $wpdb->insert(
-            $table,
-            [
-                'tenant_id' => $this->tenant_id,
-                'actor_id' => get_current_user_id(),
-                'event_type' => 'license_token_issued',
-                'entity_type' => 'license_token',
-                'entity_id' => $device_id,
-                'action' => 'issue',
-                'details' => wp_json_encode( [
-                    'device_id' => $device_id,
-                    'token_hash' => hash( 'sha256', $token ),
-                ] ),
-                'ip_address' => $this->get_user_ip(),
-                'user_agent' => isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ) : '',
-                'created_at' => current_time( 'mysql', true ),
+        do_action( 'pharmasure_audit_log', [
+            'tenant_id'  => $this->tenant_id,
+            'actor_id'   => get_current_user_id(),
+            'event_type' => 'license.token_issued',
+            'entity_type'=> 'license_token',
+            'entity_id'  => $device_id,
+            'details'    => [
+                'device_id'  => $device_id,
+                'token_hash' => hash( 'sha256', $token ),
             ],
-            [ '%d', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s' ]
-        );
+        ] );
     }
 
     /**

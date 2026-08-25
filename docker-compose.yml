@@ -10,7 +10,8 @@ services:
       MYSQL_USER: ${DB_USER:-pharmasure}
       MYSQL_PASSWORD: ${DB_PASSWORD:-pharmasure_pass}
     ports:
-      - "3306:3306"
+      # Keep XAMPP/local MySQL free on 3306; containers still use db:3306.
+      - "${DB_HOST_PORT:-3307}:3306"
     volumes:
       - db_data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d

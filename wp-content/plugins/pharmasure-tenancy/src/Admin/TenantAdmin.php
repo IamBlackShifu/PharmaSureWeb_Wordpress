@@ -3,52 +3,50 @@ namespace PharmaSure\Tenancy\Admin;
 
 class TenantAdmin {
 	public static function register_pages() {
-		if ( ! is_multisite() ) {
-			return;
-		}
-
-		add_menu_page(
-			'PharmaSure Tenants',
-			'PharmaSure Tenants',
-			'manage_network',
-			'pharmasure-tenants',
-			[ self::class, 'render_tenant_list' ],
-			'dashicons-hospital',
-			25
-		);
-
-		add_submenu_page(
-			'pharmasure-tenants',
-			'Add Tenant',
-			'Add Tenant',
-			'manage_network',
-			'pharmasure-add-tenant',
-			[ self::class, 'render_add_tenant' ]
-		);
+		// Platform administration is registered in Network Admin below.
 	}
 
 	public static function register_network_pages() {
 		add_menu_page(
 			'PharmaSure Administration',
 			'PharmaSure Admin',
-			'manage_network',
+			'manage_network_options',
 			'pharmasure-admin',
 			[ self::class, 'render_network_admin' ],
 			'dashicons-admin-generic',
 			26
 		);
+
+		add_submenu_page(
+			'pharmasure-admin',
+			'PharmaSure Dashboard',
+			'Dashboard',
+			'manage_network_options',
+			'pharmasure-admin',
+			[ self::class, 'render_network_admin' ]
+		);
+
+		add_submenu_page(
+			'pharmasure-admin',
+			'PharmaSure Tenants',
+			'Tenants',
+			'manage_network_options',
+			'pharmasure-tenants',
+			[ self::class, 'render_tenant_list' ]
+		);
+
+		add_submenu_page(
+			'pharmasure-admin',
+			'Add Tenant',
+			'Add Tenant',
+			'manage_network_options',
+			'pharmasure-add-tenant',
+			[ self::class, 'render_add_tenant' ]
+		);
 	}
 
 	public static function enqueue_assets( $hook_suffix ) {
-		if ( strpos( $hook_suffix, 'pharmasure' ) !== false ) {
-			wp_enqueue_style( 'pharmasure-admin', plugins_url( 'assets/admin.css', __DIR__ . '/../' ), [], '1.0.0' );
-			wp_enqueue_script( 'pharmasure-admin', plugins_url( 'assets/admin.js', __DIR__ . '/../' ), [ 'wp-api-fetch' ], '1.0.0', true );
-
-			wp_localize_script( 'pharmasure-admin', 'pharmasureAdmin', [
-				'nonce' => wp_create_nonce( 'wp_rest' ),
-				'rest'  => rest_url( 'pharmasure/v1' ),
-			] );
-		}
+		// The current Network Admin UI is rendered server-side and has no asset dependency.
 	}
 
 	public static function render_tenant_list() {
@@ -56,12 +54,12 @@ class TenantAdmin {
 		$table = $wpdb->prefix . 'ps_tenants';
 
 		$tenants = $wpdb->get_results(
-			"SELECT * FROM {$table} WHERE status != 'deleted' ORDER BY created_at DESC"
+			"SELECT * FROM {$table} WHERE status != 'archived' ORDER BY created_at DESC"
 		);
 
 		?>
 		<div class="wrap">
-			<h1>PharmaSure Tenants <a href="?page=pharmasure-add-tenant" class="page-title-action">Add New</a></h1>
+			<h1>PharmaSure Tenants <a href="<?php echo esc_url( network_admin_url( 'admin.php?page=pharmasure-add-tenant' ) ); ?>" class="page-title-action">Add New</a></h1>
 			<table class="wp-list-table widefat fixed striped">
 				<thead>
 					<tr>
@@ -70,22 +68,17 @@ class TenantAdmin {
 						<th>Status</th>
 						<th>Plan</th>
 						<th>Created</th>
-						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php
 					foreach ( $tenants as $tenant ) {
 						echo '<tr>';
-						echo '<td>' . esc_html( $tenant->legal_name ) . '</td>';
+						echo '<td>' . esc_html( $tenant->name ) . '</td>';
 						echo '<td>' . esc_html( $tenant->slug ) . '</td>';
 						echo '<td><span class="badge badge-' . esc_attr( $tenant->status ) . '">' . esc_html( $tenant->status ) . '</span></td>';
-						echo '<td>' . esc_html( $tenant->plan_type ) . '</td>';
+						echo '<td>-</td>';
 						echo '<td>' . esc_html( mysql2date( 'Y-m-d', $tenant->created_at ) ) . '</td>';
-						echo '<td>';
-						echo '<a href="?page=pharmasure-tenant-detail&id=' . intval( $tenant->id ) . '">View</a> | ';
-						echo '<a href="#" data-tenant-id="' . intval( $tenant->id ) . '" class="tenant-suspend">Suspend</a>';
-						echo '</td>';
 						echo '</tr>';
 					}
 					?>
@@ -96,9 +89,37 @@ class TenantAdmin {
 	}
 
 	public static function render_add_tenant() {
+		if ( ! current_user_can( 'manage_network_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to manage PharmaSure tenants.', 'pharmasure-tenancy' ) );
+		}
+
+		$notice = null;
+		if ( 'POST' === $_SERVER['REQUEST_METHOD'] && isset( $_POST['pharmasure_add_tenant_nonce'] ) ) {
+			check_admin_referer( 'pharmasure_add_tenant', 'pharmasure_add_tenant_nonce' );
+			$service = new \PharmaSure\Tenancy\Services\TenantService();
+			$result = $service->create_tenant(
+				[
+					'legal_name' => sanitize_text_field( wp_unslash( $_POST['legal_name'] ?? '' ) ),
+					'trading_name' => sanitize_text_field( wp_unslash( $_POST['trading_name'] ?? '' ) ),
+					'slug' => sanitize_key( wp_unslash( $_POST['slug'] ?? '' ) ),
+					'owner_email' => sanitize_email( wp_unslash( $_POST['owner_email'] ?? '' ) ),
+					'country' => sanitize_text_field( wp_unslash( $_POST['country'] ?? '' ) ),
+					'currency' => strtoupper( sanitize_text_field( wp_unslash( $_POST['currency'] ?? 'USD' ) ) ),
+					'timezone' => sanitize_text_field( wp_unslash( $_POST['timezone'] ?? 'Africa/Harare' ) ),
+					'address' => sanitize_text_field( wp_unslash( $_POST['address'] ?? '' ) ),
+					'phone' => sanitize_text_field( wp_unslash( $_POST['phone'] ?? '' ) ),
+				]
+			);
+			$notice = is_wp_error( $result )
+				? [ 'type' => 'error', 'message' => $result->get_error_message() ]
+				: [ 'type' => 'success', 'message' => 'Tenant created successfully.' ];
+		}
 		?>
 		<div class="wrap">
 			<h1>Add New Tenant</h1>
+			<?php if ( $notice ) : ?>
+				<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['message'] ); ?></p></div>
+			<?php endif; ?>
 			<form method="post" id="pharmasure-tenant-form">
 				<table class="form-table">
 					<tr>
@@ -126,21 +147,19 @@ class TenantAdmin {
 						<td><input type="text" id="currency" name="currency" value="USD" class="regular-text"></td>
 					</tr>
 					<tr>
-						<th><label for="plan_type">Plan</label></th>
-						<td>
-							<select id="plan_type" name="plan_type">
-								<option value="starter">Starter</option>
-								<option value="professional">Professional</option>
-								<option value="enterprise">Enterprise</option>
-							</select>
-						</td>
+						<th><label for="timezone">Timezone</label></th>
+						<td><input type="text" id="timezone" name="timezone" value="Africa/Harare" class="regular-text"></td>
 					</tr>
 					<tr>
-						<th><label for="trial_days">Trial Days</label></th>
-						<td><input type="number" id="trial_days" name="trial_days" value="14" class="small-text"></td>
+						<th><label for="address">Address</label></th>
+						<td><input type="text" id="address" name="address" class="regular-text"></td>
+					</tr>
+					<tr>
+						<th><label for="phone">Phone</label></th>
+						<td><input type="text" id="phone" name="phone" class="regular-text"></td>
 					</tr>
 				</table>
-				<?php wp_nonce_field( 'pharmasure_add_tenant' ); ?>
+				<?php wp_nonce_field( 'pharmasure_add_tenant', 'pharmasure_add_tenant_nonce' ); ?>
 				<?php submit_button( 'Create Tenant' ); ?>
 			</form>
 		</div>
@@ -148,10 +167,29 @@ class TenantAdmin {
 	}
 
 	public static function render_network_admin() {
+		global $wpdb;
+		$counts = [
+			'tenants' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}ps_tenants WHERE status != 'archived'" ),
+			'branches' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}ps_branches WHERE is_active = 1" ),
+			'members' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}ps_tenant_memberships WHERE is_active = 1" ),
+			'licences' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}ps_licences WHERE status IN ('active', 'trial', 'grace')" ),
+		];
 		?>
 		<div class="wrap">
 			<h1>PharmaSure Network Administration</h1>
-			<div id="pharmasure-dashboard"></div>
+			<p>Manage pharmacy tenants and monitor the shared PharmaSure platform.</p>
+			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;max-width:900px;margin:24px 0;">
+				<?php foreach ( [ 'tenants' => 'Tenants', 'branches' => 'Active branches', 'members' => 'Active members', 'licences' => 'Active licences' ] as $key => $label ) : ?>
+					<div class="card" style="margin:0;min-width:0;">
+						<h2 style="margin-top:0;"><?php echo esc_html( $label ); ?></h2>
+						<p style="font-size:32px;line-height:1;margin:12px 0 0;"><?php echo esc_html( number_format_i18n( $counts[ $key ] ) ); ?></p>
+					</div>
+				<?php endforeach; ?>
+			</div>
+			<p>
+				<a class="button button-primary" href="<?php echo esc_url( network_admin_url( 'admin.php?page=pharmasure-tenants' ) ); ?>">View tenants</a>
+				<a class="button" href="<?php echo esc_url( network_admin_url( 'admin.php?page=pharmasure-add-tenant' ) ); ?>">Add tenant</a>
+			</p>
 		</div>
 		<?php
 	}

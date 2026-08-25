@@ -34,7 +34,8 @@ final class Installer {
 				PRIMARY KEY  (id),
 				UNIQUE KEY tenant_sku (tenant_id,sku),
 				KEY tenant_barcode (tenant_id,barcode),
-				KEY tenant_status (tenant_id,status)
+				KEY tenant_status (tenant_id,status),
+				KEY tenant_created (tenant_id,created_at)
 			) $c",
 			"CREATE TABLE {$p}suppliers (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
@@ -44,7 +45,8 @@ final class Installer {
 				updated_at DATETIME NOT NULL, created_by BIGINT UNSIGNED NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY tenant_name (tenant_id,name),
-				KEY tenant_status (tenant_id,status)
+				KEY tenant_status (tenant_id,status),
+				KEY tenant_created (tenant_id,created_at)
 			) $c",
 			"CREATE TABLE {$p}stock_receipts (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
@@ -54,16 +56,22 @@ final class Installer {
 				created_by BIGINT UNSIGNED NOT NULL,
 				PRIMARY KEY  (id),
 				KEY tenant_branch_date (tenant_id,branch_id,received_date),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status),
 				KEY supplier_id (supplier_id)
 			) $c",
 			"CREATE TABLE {$p}stock_receipt_lines (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, receipt_id BIGINT UNSIGNED NOT NULL,
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				receipt_id BIGINT UNSIGNED NOT NULL,
 				drug_id BIGINT UNSIGNED NOT NULL, batch_number VARCHAR(100) NOT NULL,
 				quantity DECIMAL(18,3) NOT NULL, unit_cost_minor BIGINT NOT NULL,
 				selling_price_minor BIGINT NOT NULL DEFAULT 0, manufacture_date DATE NULL, expiry_date DATE NOT NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
-				KEY receipt_id (receipt_id),
-				KEY drug_id (drug_id)
+				KEY tenant_receipt (tenant_id,receipt_id),
+				KEY tenant_drug (tenant_id,drug_id),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
 			) $c",
 			"CREATE TABLE {$p}batches (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -83,7 +91,9 @@ final class Installer {
 				updated_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY branch_drug_batch (tenant_id,branch_id,drug_id,batch_number),
-				KEY fefo (tenant_id,branch_id,drug_id,expiry_date,quantity_available)
+				KEY fefo (tenant_id,branch_id,drug_id,expiry_date,quantity_available),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
 			) $c",
 			"CREATE TABLE {$p}stock_balances (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
@@ -91,25 +101,99 @@ final class Installer {
 				quantity_available DECIMAL(18,3) NOT NULL DEFAULT 0, updated_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				UNIQUE KEY branch_drug (tenant_id,branch_id,drug_id),
-				KEY branch_stock (tenant_id,branch_id,quantity_available)
+				KEY branch_stock (tenant_id,branch_id,quantity_available),
+				KEY tenant_updated (tenant_id,updated_at)
 			) $c",
 			"CREATE TABLE {$p}stock_movements (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
 				branch_id BIGINT UNSIGNED NOT NULL, drug_id BIGINT UNSIGNED NOT NULL, batch_id BIGINT UNSIGNED NULL,
 				movement_type VARCHAR(30) NOT NULL, quantity_delta DECIMAL(18,3) NOT NULL,
+				unit_cost_minor BIGINT NULL,
 				reference_type VARCHAR(50) NOT NULL, reference_id BIGINT UNSIGNED NOT NULL,
 				reason VARCHAR(255) NULL, correlation_id VARCHAR(100) NULL, created_at DATETIME NOT NULL,
 				created_by BIGINT UNSIGNED NOT NULL,
 				PRIMARY KEY  (id),
 				KEY tenant_branch_created (tenant_id,branch_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,movement_type),
 				KEY drug_created (tenant_id,drug_id,created_at),
 				KEY reference_lookup (reference_type,reference_id)
+			) $c",
+			"CREATE TABLE {$p}stock_adjustments (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				branch_id BIGINT UNSIGNED NOT NULL, adjustment_number VARCHAR(64) NOT NULL,
+				reason_code VARCHAR(30) NOT NULL, notes VARCHAR(255) NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
+				created_by BIGINT UNSIGNED NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY tenant_adjustment_number (tenant_id,adjustment_number),
+				KEY tenant_branch_created (tenant_id,branch_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
+			) $c",
+			"CREATE TABLE {$p}stock_adjustment_lines (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				adjustment_id BIGINT UNSIGNED NOT NULL, drug_id BIGINT UNSIGNED NOT NULL,
+				batch_id BIGINT UNSIGNED NOT NULL, quantity_delta DECIMAL(18,3) NOT NULL,
+				unit_cost_minor BIGINT NOT NULL DEFAULT 0, reason VARCHAR(255) NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
+				PRIMARY KEY  (id),
+				KEY tenant_adjustment (tenant_id,adjustment_id),
+				KEY tenant_drug_created (tenant_id,drug_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
+			) $c",
+			"CREATE TABLE {$p}stock_transfers (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				from_branch_id BIGINT UNSIGNED NOT NULL, to_branch_id BIGINT UNSIGNED NOT NULL,
+				transfer_number VARCHAR(64) NOT NULL, notes VARCHAR(255) NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
+				created_by BIGINT UNSIGNED NOT NULL,
+				PRIMARY KEY  (id),
+				UNIQUE KEY tenant_transfer_number (tenant_id,transfer_number),
+				KEY tenant_from_created (tenant_id,from_branch_id,created_at),
+				KEY tenant_to_created (tenant_id,to_branch_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
+			) $c",
+			"CREATE TABLE {$p}stock_transfer_lines (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				transfer_id BIGINT UNSIGNED NOT NULL, drug_id BIGINT UNSIGNED NOT NULL,
+				source_batch_id BIGINT UNSIGNED NOT NULL, destination_batch_id BIGINT UNSIGNED NOT NULL,
+				quantity DECIMAL(18,3) NOT NULL, unit_cost_minor BIGINT NOT NULL DEFAULT 0,
+				selling_price_minor BIGINT NOT NULL DEFAULT 0, batch_number VARCHAR(100) NOT NULL,
+				expiry_date DATE NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'completed',
+				created_at DATETIME NOT NULL,
+				PRIMARY KEY  (id),
+				KEY tenant_transfer (tenant_id,transfer_id),
+				KEY tenant_drug_created (tenant_id,drug_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
+			) $c",
+			"CREATE TABLE {$p}batch_dispositions (
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				branch_id BIGINT UNSIGNED NOT NULL, batch_id BIGINT UNSIGNED NOT NULL,
+				previous_status VARCHAR(20) NOT NULL, new_status VARCHAR(20) NOT NULL,
+				quantity_affected DECIMAL(18,3) NOT NULL DEFAULT 0, reason VARCHAR(255) NOT NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
+				created_by BIGINT UNSIGNED NOT NULL,
+				PRIMARY KEY  (id),
+				KEY tenant_batch (tenant_id,batch_id),
+				KEY tenant_branch_created (tenant_id,branch_id,created_at),
+				KEY tenant_created (tenant_id,created_at),
+				KEY tenant_status (tenant_id,status)
 			) $c",
 		);
 
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
+		// Legacy receipt lines pre-date direct tenant scoping. Backfill them from
+		// their immutable parent before any tenant-scoped line query is used.
+		$wpdb->query( "UPDATE {$p}stock_receipt_lines l JOIN {$p}stock_receipts r ON r.id=l.receipt_id SET l.tenant_id=r.tenant_id,l.created_at=r.created_at WHERE l.tenant_id=0" );
+		// Conservative legacy backfill: receipt-line costs are immutable and
+		// therefore safe to restore. Ambiguous historical sale costs stay NULL.
+		$wpdb->query( "UPDATE {$p}stock_movements m JOIN {$p}stock_receipt_lines l ON l.tenant_id=m.tenant_id AND m.reference_type='stock_receipt' AND l.receipt_id=m.reference_id AND l.drug_id=m.drug_id JOIN {$p}batches b ON b.tenant_id=m.tenant_id AND b.id=m.batch_id AND b.batch_number=l.batch_number SET m.unit_cost_minor=l.unit_cost_minor WHERE m.unit_cost_minor IS NULL AND m.movement_type='receipt'" );
 		update_site_option( 'pharmasure_inventory_db_version', DB_VERSION );
 	}
 }

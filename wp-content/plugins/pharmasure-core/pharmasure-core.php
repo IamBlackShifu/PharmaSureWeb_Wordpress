@@ -4,8 +4,8 @@
  * Plugin URI: https://pharmasure.co.zw/
  * Description: Shared bootstrap, migrations, capabilities, tenant context, licensing and audit foundations for PharmaSure.
  * @package PharmaSure_Core
- * @version 1.0.0
- * Version: 1.0.0
+ * @version 1.7.0
+ * Version: 1.7.0
  * Requires at least: 6.4
  * Requires PHP: 8.2
  * Author: Infinity Lines of Code Pvt Ltd
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // Define plugin constants
 define( 'PHARMASURE_CORE_PATH', plugin_dir_path( __FILE__ ) );
 define( 'PHARMASURE_CORE_URL', plugin_dir_url( __FILE__ ) );
-define( 'PHARMASURE_CORE_VERSION', '1.0.0' );
+define( 'PHARMASURE_CORE_VERSION', '1.7.0' );
 define( 'PHARMASURE_CORE_DB_VERSION', '1' );
 define( 'PHARMASURE_TABLE_PREFIX', 'ps_' );
 

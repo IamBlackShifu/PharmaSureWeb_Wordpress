@@ -9,6 +9,12 @@ namespace PharmaSure\Core;
 
 class Plugin {
     public static function init() {
+        AppLauncher::bootstrap_context();
+        AppLauncher::register();
+        AuditLogger::register();
+        Admin\ApplicationShell::register();
+        Admin\WhiteLabel::register();
+        Security\Hardening::register();
         add_action( 'init', [ static::class, 'register_capabilities' ], 10 );
         add_action( 'init', [ static::class, 'run_migrations' ], 5 );
         add_action( 'rest_api_init', [ static::class, 'register_rest_routes' ], 10 );
@@ -46,19 +52,37 @@ class Plugin {
             'pharmasure_view_patients' => 'View patients',
             'pharmasure_manage_patients' => 'Manage patients',
             'pharmasure_view_prescriptions' => 'View prescriptions',
+            'pharmasure_manage_prescriptions' => 'Create and manage prescriptions',
             'pharmasure_review_prescriptions' => 'Review and approve prescriptions',
             'pharmasure_dispense_medications' => 'Dispense medications',
+
+            // Printing
+            'pharmasure_print_documents' => 'Print and reprint pharmacy documents',
+            'pharmasure_manage_printers' => 'Manage printer profiles and templates',
             
             // POS
             'pharmasure_access_pos' => 'Access point of sale',
             'pharmasure_manage_tills' => 'Manage till sessions',
+            'pharmasure_apply_pos_discounts' => 'Apply point-of-sale discounts',
+            'pharmasure_refund_sales' => 'Refund completed sales',
+            'pharmasure_void_sales' => 'Void completed sales',
+            'pharmasure_approve_till_variance' => 'Approve end-of-day till variances',
             
             // Claims
             'pharmasure_manage_claims' => 'Manage insurance claims',
+            'pharmasure_manage_insurers' => 'Manage insurers, schemes and patient cover',
+            'pharmasure_prepare_claims' => 'Prepare and validate claims',
+            'pharmasure_submit_claims' => 'Submit claims and record adjudication',
+            'pharmasure_reconcile_claims' => 'Reconcile remittances and approve write-offs',
             
             // Reports
             'pharmasure_view_reports' => 'View reports',
             'pharmasure_export_data' => 'Export data',
+            'pharmasure_manage_integrations' => 'Configure external integrations',
+            'pharmasure_use_integrations' => 'Queue integration deliveries',
+            'pharmasure_manage_offline_devices' => 'Register and revoke offline devices',
+            'pharmasure_view_offline_operations' => 'View offline queues and replay health',
+            'pharmasure_resolve_offline_conflicts' => 'Discard, rebase and replay offline mutations',
             
             // Audit
             'pharmasure_view_audit_log' => 'View audit logs',

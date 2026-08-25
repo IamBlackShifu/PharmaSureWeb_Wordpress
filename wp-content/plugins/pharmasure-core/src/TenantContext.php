@@ -37,6 +37,10 @@ class TenantContext {
         }
         
         $this->load_memberships();
+        $saved_branch = (int) get_user_meta( $this->user_id, 'pharmasure_active_branch_id', true );
+        if ( $saved_branch && $this->can_access_branch( $saved_branch ) ) {
+            $this->branch_id = $saved_branch;
+        }
         $this->load_licence_snapshot();
     }
 
@@ -82,7 +86,7 @@ class TenantContext {
         $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'tenant_memberships';
         
         $tenant_id = $wpdb->get_var( $wpdb->prepare(
-            "SELECT tenant_id FROM $table WHERE user_id = %d LIMIT 1",
+            "SELECT tenant_id FROM $table WHERE user_id = %d AND is_active = 1 LIMIT 1",
             $this->user_id
         ) );
         
@@ -103,7 +107,7 @@ class TenantContext {
         $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'tenant_memberships';
         
         $this->memberships = $wpdb->get_results( $wpdb->prepare(
-            "SELECT tenant_id, role, is_admin FROM $table WHERE user_id = %d",
+            "SELECT id, tenant_id, role, is_admin, is_active FROM $table WHERE user_id = %d AND is_active = 1",
             $this->user_id
         ) );
 
@@ -156,11 +160,13 @@ class TenantContext {
      * @return bool
      */
     public function set_branch( $branch_id ) {
-        if ( ! $this->validate_branch_access( $branch_id ) ) {
+        if ( ! $this->can_access_branch( $branch_id ) ) {
             return false;
         }
         
         $this->branch_id = (int) $branch_id;
+
+        update_user_meta( $this->user_id, 'pharmasure_active_branch_id', $this->branch_id );
         
         // Update session
         if ( isset( $_SESSION ) ) {
@@ -176,17 +182,75 @@ class TenantContext {
      * @param int $branch_id
      * @return bool
      */
-    private function validate_branch_access( $branch_id ) {
+    public function can_access_branch( $branch_id ) {
         global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'branches';
+        $branches    = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'branches';
+        $memberships = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'tenant_memberships';
+        $assignments = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'membership_branches';
+
+        $branch_id = (int) $branch_id;
+        if ( ! $branch_id || ! $this->tenant_id || ! $this->user_id ) {
+            return false;
+        }
         
-        $exists = $wpdb->get_var( $wpdb->prepare(
-            "SELECT id FROM $table WHERE id = %d AND tenant_id = %d",
+        $branch_exists = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $branches WHERE id = %d AND tenant_id = %d AND is_active = 1",
             $branch_id,
             $this->tenant_id
         ) );
+
+        if ( ! $branch_exists ) {
+            return false;
+        }
+
+        if ( $this->is_super_admin() ) {
+            return true;
+        }
+
+        $membership = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, is_admin FROM $memberships WHERE user_id = %d AND tenant_id = %d AND is_active = 1 LIMIT 1",
+            $this->user_id,
+            $this->tenant_id
+        ) );
+
+        if ( ! $membership ) {
+            return false;
+        }
+
+        // Tenant administrators intentionally have access to every active
+        // branch; operational users require an explicit branch assignment.
+        if ( (int) $membership->is_admin === 1 ) {
+            return true;
+        }
+
+        $assigned = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $assignments WHERE membership_id = %d AND branch_id = %d",
+            $membership->id,
+            $branch_id
+        ) );
         
-        return ! empty( $exists );
+        return ! empty( $assigned );
+    }
+
+    /** Determine whether the current user may access a tenant. */
+    public function can_access_tenant( $tenant_id ) {
+        global $wpdb;
+
+        $tenant_id = (int) $tenant_id;
+        if ( ! $tenant_id || ! $this->user_id ) {
+            return false;
+        }
+
+        if ( $this->is_super_admin() ) {
+            return true;
+        }
+
+        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'tenant_memberships';
+        return (bool) $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM $table WHERE user_id = %d AND tenant_id = %d AND is_active = 1 LIMIT 1",
+            $this->user_id,
+            $tenant_id
+        ) );
     }
 
     /**

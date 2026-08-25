@@ -1,0 +1,8 @@
+:root{--ps-admin-navy:#0b2937;--ps-admin-teal:#087f8c;--ps-admin-green:#16875d;--ps-admin-line:#cdd8dc}
+#wpadminbar{background:var(--ps-admin-navy)}
+#adminmenuback,#adminmenuwrap,#adminmenu{background:var(--ps-admin-navy)}
+#adminmenu .wp-has-current-submenu .wp-submenu,#adminmenu .wp-has-current-submenu.opensub .wp-submenu,#adminmenu .wp-submenu{background:#071f2a}
+#adminmenu .wp-has-current-submenu>a.menu-top,#adminmenu .current a.menu-top,#adminmenu a:hover,#adminmenu li.menu-top:hover{background:var(--ps-admin-teal);color:#fff}
+#wpfooter{color:#526b75}
+.ps-account form{display:grid;max-width:760px;gap:18px}.ps-account__card{display:grid;gap:8px;padding:24px;border:1px solid var(--ps-admin-line);border-top:3px solid var(--ps-admin-teal);border-radius:3px;background:#fff;box-shadow:none}
+.ps-account__card h2{margin:0 0 8px;color:var(--ps-admin-navy)}.ps-account__card p{margin:0 0 8px;color:#526b75}.ps-account__card input{width:100%;max-width:520px;min-height:42px}

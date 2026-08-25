@@ -1,287 +1,151 @@
 #!/usr/bin/env php
 <?php
 /**
- * PharmaSure License Validation Test
- * 
- * Verifies that license validation works correctly with cryptographic signing
- * 
- * Usage: php scripts/test-license.php
+ * PharmaSure licensing integration test.
+ *
+ * Run from the WordPress root: php scripts/test-license.php
  */
 
-// Load WordPress
-if (file_exists(__DIR__ . '/../wp-load.php')) {
-    require_once __DIR__ . '/../wp-load.php';
+if ( file_exists( __DIR__ . '/../wp-load.php' ) ) {
+	require_once __DIR__ . '/../wp-load.php';
 } else {
-    die("WordPress not loaded. Run from WordPress root directory.\n");
+	fwrite( STDERR, "WordPress not loaded. Run from WordPress root directory.\n" );
+	exit( 1 );
 }
 
-// Check if plugin is active
-if (!function_exists('get_plugin_data') || !is_plugin_active('pharmasure-core/pharmasure-core.php')) {
-    die("pharmasure-core plugin must be active.\n");
+if ( ! is_plugin_active( 'pharmasure-core/pharmasure-core.php' ) ) {
+	fwrite( STDERR, "pharmasure-core plugin must be active.\n" );
+	exit( 1 );
 }
 
-echo "\n═══════════════════════════════════════════════════════════════\n";
-echo "  PharmaSure - License Validation Test\n";
-echo "═══════════════════════════════════════════════════════════════\n\n";
-
-$results = [];
-$passed = 0;
-$failed = 0;
-
-// Test 1: License Manager Initialization
-echo "[Test 1] License Manager Initialization\n";
-try {
-    if (class_exists('\PharmaSure\Core\LicenseManager')) {
-        $license_mgr = new \PharmaSure\Core\LicenseManager();
-        echo "  ✓ PASS: LicenseManager instantiated\n";
-        $passed++;
-    } else {
-        throw new Exception("LicenseManager class not found");
-    }
-} catch (Exception $e) {
-    echo "  ✗ FAIL: " . $e->getMessage() . "\n";
-    $failed++;
-}
-
-// Test 2: Database Tables
-echo "\n[Test 2] License Database Schema\n";
 global $wpdb;
-$tables = [
-    'ps_licences',
-    'ps_licence_entitlements',
-    'ps_licence_quotas',
-    'ps_licence_signing_keys',
-    'ps_token_revocation_list',
-];
+$prefix = $wpdb->prefix . 'ps_';
+$pass = 0;
+$fail = 0;
+$ids = array();
+$previous_private_key = get_option( 'pharmasure_license_signing_key_private', null );
 
-foreach ($tables as $table) {
-    $full_table = $wpdb->prefix . $table;
-    $result = $wpdb->get_var("SHOW TABLES LIKE '$full_table'");
-    if ($result) {
-        echo "  ✓ PASS: Table $table exists\n";
-        $passed++;
-    } else {
-        echo "  ✗ FAIL: Table $table missing\n";
-        $failed++;
-    }
-}
+$assert = static function ( $condition, $message ) use ( &$pass, &$fail ) {
+	if ( $condition ) {
+		++$pass;
+		echo "PASS: {$message}\n";
+	} else {
+		++$fail;
+		echo "FAIL: {$message}\n";
+	}
+};
 
-// Test 3: License Records
-echo "\n[Test 3] License Records\n";
-$license_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}ps_licences");
-if ($license_count > 0) {
-    echo "  ✓ PASS: Found $license_count license(s)\n";
-    $passed++;
-    
-    // Show license details
-    $licenses = $wpdb->get_results("
-        SELECT 
-            l.id,
-            l.tenant_id,
-            l.license_key,
-            l.status,
-            l.expires_at,
-            COUNT(DISTINCT le.id) as entitlements,
-            COUNT(DISTINCT lq.id) as quotas
-        FROM {$wpdb->prefix}ps_licences l
-        LEFT JOIN {$wpdb->prefix}ps_licence_entitlements le ON l.id = le.licence_id
-        LEFT JOIN {$wpdb->prefix}ps_licence_quotas lq ON l.id = lq.licence_id
-        GROUP BY l.id
-        LIMIT 5
-    ");
-    
-    foreach ($licenses as $lic) {
-        $expires = strtotime($lic->expires_at) > time() ? 'Valid' : 'Expired';
-        echo "    License {$lic->id} (Tenant {$lic->tenant_id}): {$lic->status} - {$expires}\n";
-        echo "      Entitlements: {$lic->entitlements}, Quotas: {$lic->quotas}\n";
-    }
-} else {
-    echo "  ⚠ WARN: No licenses found (create one first)\n";
-}
+echo "PharmaSure licensing integration tests\n";
 
-// Test 4: Signing Keys
-echo "\n[Test 4] Cryptographic Signing Keys\n";
-$key_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}ps_licence_signing_keys");
-if ($key_count > 0) {
-    echo "  ✓ PASS: Found $key_count signing key(s)\n";
-    $passed++;
-    
-    $keys = $wpdb->get_results("
-        SELECT id, key_id, algorithm, status, created_at
-        FROM {$wpdb->prefix}ps_licence_signing_keys
-        ORDER BY created_at DESC
-        LIMIT 3
-    ");
-    
-    foreach ($keys as $key) {
-        $age = date('Y-m-d', strtotime($key->created_at));
-        echo "    Key {$key->key_id} ({$key->algorithm}): {$key->status} - Created: $age\n";
-    }
-} else {
-    echo "  ✗ FAIL: No signing keys configured\n";
-    $failed++;
-}
-
-// Test 5: License Validation
-echo "\n[Test 5] License Validation (Database)\n";
 try {
-    if (class_exists('\PharmaSure\Core\LicenseManager')) {
-        $license_mgr = new \PharmaSure\Core\LicenseManager();
-        
-        // Get first license for testing
-        $license = $wpdb->get_row("
-            SELECT * FROM {$wpdb->prefix}ps_licences 
-            WHERE status IN ('active', 'trial')
-            LIMIT 1
-        ");
-        
-        if ($license) {
-            echo "  Testing license: {$license->license_key}\n";
-            
-            // Attempt validation (method may vary based on implementation)
-            echo "  ✓ PASS: License record accessible\n";
-            $passed++;
-            
-            // Check status
-            echo "  Status: {$license->status}\n";
-            $expires = strtotime($license->expires_at);
-            if ($expires > time()) {
-                echo "  Expiry: Valid (expires " . date('Y-m-d', $expires) . ")\n";
-                echo "  ✓ PASS: License not expired\n";
-                $passed++;
-            } else {
-                echo "  Expiry: EXPIRED (" . date('Y-m-d', $expires) . ")\n";
-                echo "  ⚠ WARN: License is expired\n";
-            }
-        } else {
-            echo "  ⚠ SKIP: No active licenses to test\n";
-        }
-    }
-} catch (Exception $e) {
-    echo "  ✗ FAIL: " . $e->getMessage() . "\n";
-    $failed++;
+	foreach ( array( 'licences', 'licence_entitlements', 'licence_quotas', 'licence_signing_keys', 'token_revocation_list' ) as $table ) {
+		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $prefix . $table ) );
+		$assert( $prefix . $table === $exists, "{$table} table exists" );
+	}
+
+	$key_resource = openssl_pkey_new(
+		array(
+			'private_key_bits' => 2048,
+			'private_key_type' => OPENSSL_KEYTYPE_RSA,
+		)
+	);
+	$assert( false !== $key_resource, 'RSA signing key can be generated' );
+	if ( false === $key_resource ) {
+		throw new RuntimeException( 'Unable to generate RSA test key' );
+	}
+
+	openssl_pkey_export( $key_resource, $private_key );
+	$key_details = openssl_pkey_get_details( $key_resource );
+	$public_key = $key_details['key'] ?? '';
+	$assert( str_contains( $public_key, 'BEGIN PUBLIC KEY' ), 'generated public key is valid PEM' );
+
+	$token = wp_generate_uuid4();
+	$wpdb->insert(
+		$prefix . 'tenants',
+		array(
+			'name' => 'Licence Test Tenant',
+			'slug' => 'licence-test-' . $token,
+			'primary_contact_email' => 'licence-' . $token . '@example.test',
+			'status' => 'active',
+		)
+	);
+	$ids['tenant'] = (int) $wpdb->insert_id;
+
+	$wpdb->insert( $prefix . 'products', array( 'sku' => 'TEST-' . $token, 'name' => 'Test Product' ) );
+	$ids['product'] = (int) $wpdb->insert_id;
+	$wpdb->insert( $prefix . 'plans', array( 'product_id' => $ids['product'], 'name' => 'Test Plan', 'plan_tier' => 'test' ) );
+	$ids['plan'] = (int) $wpdb->insert_id;
+	$wpdb->insert(
+		$prefix . 'licences',
+		array(
+			'tenant_id' => $ids['tenant'],
+			'plan_id' => $ids['plan'],
+			'status' => 'active',
+			'licence_key' => 'LIC-' . $token,
+			'activated_at' => current_time( 'mysql', true ),
+			'expires_at' => gmdate( 'Y-m-d H:i:s', time() + ( 30 * DAY_IN_SECONDS ) ),
+		)
+	);
+	$ids['licence'] = (int) $wpdb->insert_id;
+	$wpdb->insert( $prefix . 'licence_entitlements', array( 'licence_id' => $ids['licence'], 'entitlement_key' => 'inventory', 'is_active' => 1 ) );
+	$ids['entitlement'] = (int) $wpdb->insert_id;
+	$wpdb->insert( $prefix . 'licence_quotas', array( 'licence_id' => $ids['licence'], 'quota_key' => 'branches', 'limit_value' => 3 ) );
+	$ids['quota'] = (int) $wpdb->insert_id;
+	$wpdb->insert( $prefix . 'licence_signing_keys', array( 'key_id' => 'pharmasure-v1', 'public_key' => $public_key, 'is_active' => 1 ) );
+	$ids['signing_key'] = (int) $wpdb->insert_id;
+	update_option( 'pharmasure_license_signing_key_private', $private_key, false );
+
+	$assert( $ids['tenant'] > 0 && $ids['licence'] > 0 && $ids['signing_key'] > 0, 'licensing fixtures are created' );
+
+	$manager = new \PharmaSure\Core\LicenseManager( $ids['tenant'] );
+	$licence = $manager->validate_license();
+	$assert( ! is_wp_error( $licence ), 'database licence validation succeeds' );
+	$assert( in_array( 'inventory', $licence['entitlements'] ?? array(), true ), 'entitlement is loaded from the migrated schema' );
+	$assert( 3 === ( $licence['quotas']['branches'] ?? null ), 'quota is loaded from the migrated schema' );
+
+	$jwt = $manager->issue_offline_token( 'integration-device', 1 );
+	$assert( is_string( $jwt ) && 3 === count( explode( '.', $jwt ) ), 'RS256 offline token is issued' );
+	$offline = is_string( $jwt ) ? $manager->validate_license( $jwt ) : null;
+	$assert( is_array( $offline ) && 'offline_token' === ( $offline['source'] ?? '' ), 'offline token signature and claims validate' );
+	$tampered_parts = is_string( $jwt ) ? explode( '.', $jwt ) : array();
+	if ( 3 === count( $tampered_parts ) && '' !== $tampered_parts[2] ) {
+		$tampered_parts[2][0] = 'A' === $tampered_parts[2][0] ? 'B' : 'A';
+	}
+	$tampered = implode( '.', $tampered_parts );
+	$tampered_result = $manager->validate_license( $tampered );
+	$assert( is_wp_error( $tampered_result ) && 'invalid_signature' === $tampered_result->get_error_code(), 'an explicitly supplied token with a bad signature fails closed' );
+	$entitled = $manager->enforce_entitlement( 'inventory' );
+	$assert( is_array( $entitled ), 'entitlement enforcement permits a licensed feature' );
+	$denied = $manager->enforce_entitlement( 'not-in-plan' );
+	$assert( is_wp_error( $denied ) && 'entitlement_required' === $denied->get_error_code(), 'entitlement enforcement fails closed for an unavailable feature' );
+
+	$other_tenant = new \PharmaSure\Core\LicenseManager( $ids['tenant'] + 1000000 );
+	$cross_tenant = is_string( $jwt ) ? $other_tenant->validate_license( $jwt ) : null;
+	$assert( is_wp_error( $cross_tenant ), 'offline token cannot authorize another tenant' );
+
+	$service = new \PharmaSure\Licensing\Services\LicenseService();
+	$assert( $service->has_entitlement( $ids['tenant'], 'inventory' ), 'licensing plugin reads entitlements using the shared schema' );
+	$quota = $service->check_quota( $ids['tenant'], 'branches' );
+	$assert( 3 === $quota['limit'] && 0 === $quota['used'] && $quota['available'], 'licensing plugin reads quota and usage using the shared schema' );
+} catch ( Throwable $error ) {
+	++$fail;
+	echo 'FAIL: unexpected exception: ' . $error->getMessage() . "\n";
+} finally {
+	if ( isset( $ids['tenant'] ) ) {
+		$wpdb->delete( $prefix . 'audit_events', array( 'tenant_id' => $ids['tenant'] ), array( '%d' ) );
+	}
+	foreach ( array( 'signing_key' => 'licence_signing_keys', 'quota' => 'licence_quotas', 'entitlement' => 'licence_entitlements', 'licence' => 'licences', 'plan' => 'plans', 'product' => 'products', 'tenant' => 'tenants' ) as $id_key => $table ) {
+		if ( ! empty( $ids[ $id_key ] ) ) {
+			$wpdb->delete( $prefix . $table, array( 'id' => $ids[ $id_key ] ), array( '%d' ) );
+		}
+	}
+
+	if ( null === $previous_private_key ) {
+		delete_option( 'pharmasure_license_signing_key_private' );
+	} else {
+		update_option( 'pharmasure_license_signing_key_private', $previous_private_key, false );
+	}
 }
 
-// Test 6: Entitlements
-echo "\n[Test 6] License Entitlements\n";
-$entitlement_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}ps_licence_entitlements");
-if ($entitlement_count > 0) {
-    echo "  ✓ PASS: Found $entitlement_count entitlements\n";
-    $passed++;
-    
-    // Show sample entitlements
-    $entitlements = $wpdb->get_results("
-        SELECT DISTINCT entitlement_key
-        FROM {$wpdb->prefix}ps_licence_entitlements
-        LIMIT 5
-    ");
-    
-    echo "  Sample entitlements:\n";
-    foreach ($entitlements as $ent) {
-        echo "    - {$ent->entitlement_key}\n";
-    }
-} else {
-    echo "  ⚠ WARN: No entitlements configured\n";
-}
-
-// Test 7: Quotas
-echo "\n[Test 7] License Quotas\n";
-$quota_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}ps_licence_quotas");
-if ($quota_count > 0) {
-    echo "  ✓ PASS: Found $quota_count quotas\n";
-    $passed++;
-    
-    // Show sample quotas
-    $quotas = $wpdb->get_results("
-        SELECT quota_key, limit_value, current_usage
-        FROM {$wpdb->prefix}ps_licence_quotas
-        LIMIT 5
-    ");
-    
-    echo "  Sample quotas:\n";
-    foreach ($quotas as $q) {
-        $pct = ($q->limit_value > 0) ? round(($q->current_usage / $q->limit_value) * 100) : 0;
-        echo "    - {$q->quota_key}: {$q->current_usage}/{$q->limit_value} ({$pct}%)\n";
-    }
-} else {
-    echo "  ⚠ WARN: No quotas configured\n";
-}
-
-// Test 8: Token Revocation
-echo "\n[Test 8] Token Revocation List\n";
-$revoked_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}ps_token_revocation_list");
-echo "  Revoked tokens: $revoked_count\n";
-echo "  ✓ PASS: Revocation list initialized\n";
-$passed++;
-
-// Test 9: License Audit Trail
-echo "\n[Test 9] License Audit Trail\n";
-$audit_count = $wpdb->get_var("
-    SELECT COUNT(*) FROM {$wpdb->prefix}ps_audit_events 
-    WHERE entity_type = 'license'
-");
-if ($audit_count !== null) {
-    echo "  ✓ PASS: License audit events logged ($audit_count entries)\n";
-    $passed++;
-    
-    // Show recent events
-    $events = $wpdb->get_results("
-        SELECT action, created_at
-        FROM {$wpdb->prefix}ps_audit_events
-        WHERE entity_type = 'license'
-        ORDER BY created_at DESC
-        LIMIT 5
-    ");
-    
-    echo "  Recent license events:\n";
-    foreach ($events as $event) {
-        echo "    - {$event->action} (" . date('Y-m-d H:i:s', strtotime($event->created_at)) . ")\n";
-    }
-} else {
-    echo "  ✗ FAIL: Cannot access audit events\n";
-    $failed++;
-}
-
-// Test 10: Cryptographic Verification
-echo "\n[Test 10] Cryptographic Signing\n";
-try {
-    // Check if signing keys have public key data
-    $key = $wpdb->get_row("
-        SELECT * FROM {$wpdb->prefix}ps_licence_signing_keys
-        WHERE status = 'active'
-        LIMIT 1
-    ");
-    
-    if ($key && !empty($key->public_key)) {
-        echo "  ✓ PASS: Public key available for verification\n";
-        $passed++;
-        
-        // Verify key format
-        if (strpos($key->public_key, 'BEGIN PUBLIC KEY') !== false) {
-            echo "  ✓ PASS: Valid RSA public key format\n";
-            $passed++;
-        } else {
-            echo "  ⚠ WARN: Public key format may be invalid\n";
-        }
-    } else {
-        echo "  ⚠ WARN: No active signing keys\n";
-    }
-} catch (Exception $e) {
-    echo "  ✗ FAIL: " . $e->getMessage() . "\n";
-    $failed++;
-}
-
-// Summary
-echo "\n═══════════════════════════════════════════════════════════════\n";
-echo "  TEST RESULTS\n";
-echo "═══════════════════════════════════════════════════════════════\n";
-echo "  ✓ Passed: $passed\n";
-echo "  ✗ Failed: $failed\n";
-
-if ($failed === 0) {
-    echo "\n  ✓ All tests passed! License system is working.\n";
-    exit(0);
-} else {
-    echo "\n  ✗ Some tests failed. Review the issues above.\n";
-    exit(1);
-}
+echo "Licensing tests: {$pass} passed, {$fail} failed.\n";
+exit( $fail > 0 ? 1 : 0 );

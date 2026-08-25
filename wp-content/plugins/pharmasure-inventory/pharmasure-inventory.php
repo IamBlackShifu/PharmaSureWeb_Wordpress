@@ -3,7 +3,7 @@
  * Plugin Name: PharmaSure Inventory
  * Plugin URI: https://pharmasure.co.zw/
  * Description: Tenant-safe drug catalogue, suppliers, batches, stock balances, receipts and immutable stock movements.
- * Version: 1.1.0
+ * Version: 1.6.0
  * Requires at least: 6.4
  * Requires PHP: 8.2
  * Requires Plugins: pharmasure-core
@@ -20,8 +20,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION = '1.1.0';
-const DB_VERSION = '1';
+const VERSION = '1.6.0';
+const DB_VERSION = '3';
 
 spl_autoload_register(
 	static function ( $class ) {

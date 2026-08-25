@@ -1,6 +1,7 @@
 <?php
 namespace PharmaSure\Tenancy\Rest;
 
+use PharmaSure\Core\TenantContext;
 use PharmaSure\Tenancy\Services\TenantService;
 
 class TenantController {
@@ -20,7 +21,7 @@ class TenantController {
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => [ $controller, 'list_tenants' ],
 				'permission_callback' => function () {
-					return current_user_can( 'manage_options' );
+					return current_user_can( 'manage_network_options' );
 				},
 			]
 		);
@@ -32,7 +33,7 @@ class TenantController {
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'create_tenant' ],
 				'permission_callback' => function () {
-					return current_user_can( 'manage_options' );
+					return current_user_can( 'manage_network_options' );
 				},
 			]
 		);
@@ -43,8 +44,13 @@ class TenantController {
 			[
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => [ $controller, 'get_tenant' ],
-				'permission_callback' => function () {
-					return is_user_logged_in();
+				'permission_callback' => function ( $request ) {
+					if ( ! is_user_logged_in() ) {
+						return new \WP_Error( 'rest_not_logged_in', 'Authentication is required.', [ 'status' => 401 ] );
+					}
+					return TenantContext::instance()->can_access_tenant( intval( $request->get_param( 'id' ) ) )
+						? true
+						: new \WP_Error( 'forbidden_tenant', 'You are not authorized for this tenant.', [ 'status' => 403 ] );
 				},
 			]
 		);
@@ -56,7 +62,7 @@ class TenantController {
 				'methods'             => \WP_REST_Server::EDITABLE,
 				'callback'            => [ $controller, 'update_tenant' ],
 				'permission_callback' => function () {
-					return current_user_can( 'manage_options' );
+					return current_user_can( 'manage_network_options' );
 				},
 			]
 		);

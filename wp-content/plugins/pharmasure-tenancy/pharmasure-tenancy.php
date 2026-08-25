@@ -76,11 +76,28 @@ class Plugin {
 		add_action( 'rest_api_init', [ Rest\BranchController::class, 'register_routes' ] );
 
 		// Admin pages
-		add_action( 'admin_menu', [ Admin\TenantAdmin::class, 'register_pages' ] );
 		add_action( 'network_admin_menu', [ Admin\TenantAdmin::class, 'register_network_pages' ] );
 
 		// Enqueue admin assets
 		add_action( 'admin_enqueue_scripts', [ Admin\TenantAdmin::class, 'enqueue_assets' ] );
+
+		// Give every newly-created tenant site the supported application theme.
+		add_action( 'wp_initialize_site', [ static::class, 'configure_tenant_site' ], 200, 2 );
+	}
+
+	public static function configure_tenant_site( $site, $args ) {
+		if ( ! $site instanceof \WP_Site || (int) $site->blog_id === (int) get_main_site_id() ) {
+			return;
+		}
+		switch_to_blog( (int) $site->blog_id );
+		try {
+			if ( wp_get_theme( 'pharmasure-portal' )->exists() ) {
+				switch_theme( 'pharmasure-portal' );
+			}
+			update_option( 'blogdescription', __( 'Secure pharmacy operations', 'pharmasure-tenancy' ) );
+		} finally {
+			restore_current_blog();
+		}
 	}
 
 	private static function register_rest_routes() {
