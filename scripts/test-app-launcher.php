@@ -26,7 +26,7 @@ $css      = file_get_contents( PHARMASURE_CORE_PATH . 'assets/css/crisp-theme.cs
 $js       = file_get_contents( PHARMASURE_CORE_PATH . 'assets/js/app.js' );
 
 $assert( class_exists( AppLauncher::class ), 'standalone application launcher autoloads' );
-$assert( str_contains( $launcher, "add_rewrite_rule( '^app(?:/.*)?/?$'" ), '/app and nested routes are registered' );
+$assert( str_contains( $launcher, "add_rewrite_rule( '^app(?:/(?!print(?:/|$)).*)?/?$'" ), '/app and nested routes are registered while the protected print namespace remains reserved' );
 $assert( str_contains( $launcher, 'auth_redirect()' ) && str_contains( $launcher, 'redirect_staff_admin' ), 'authentication and pharmacy-staff redirect guards are present' );
 $assert( str_contains( $launcher, "register_rest_route(\n\t\t\t'pharmasure/v1'" ) && str_contains( $launcher, "'/app/overview'" ), 'headless overview REST route is registered' );
 $assert( ! str_contains( $template, 'wp_head' ) && ! str_contains( $template, 'wp_footer' ) && ! str_contains( $template, 'admin_url' ), 'standalone template has no WordPress presentation hooks' );

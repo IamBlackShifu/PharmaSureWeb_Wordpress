@@ -16,6 +16,9 @@ final class WhiteLabel {
 		add_action( 'login_enqueue_scripts', array( self::class, 'login_styles' ) );
 		add_filter( 'login_headerurl', array( self::class, 'login_url' ) );
 		add_filter( 'login_headertext', array( self::class, 'login_title' ) );
+		add_filter( 'login_title', array( self::class, 'login_document_title' ), 10, 2 );
+		add_filter( 'login_body_class', array( self::class, 'login_body_class' ) );
+		add_filter( 'login_message', array( self::class, 'login_message' ) );
 		add_filter( 'admin_title', array( self::class, 'admin_title' ), 10, 2 );
 		add_filter( 'admin_footer_text', array( self::class, 'footer_text' ) );
 		add_filter( 'update_footer', array( self::class, 'hide_version' ), PHP_INT_MAX );
@@ -120,17 +123,13 @@ final class WhiteLabel {
 	}
 
 	public static function login_styles() {
-		if ( is_main_site() ) { return; }
-		echo '<style>
-		body.login{background:linear-gradient(145deg,#f7fbfb,#edf7f6)}
-		.login h1 a{width:72px;height:72px;border-radius:20px;background:none!important;background-color:#087f8c!important;box-shadow:0 14px 35px rgba(8,127,140,.22)}
-		.login h1 a:before{display:grid;height:72px;place-items:center;color:#fff;content:"P";font:800 36px/1 system-ui}
-		.login form{border:1px solid #dce9e8;border-radius:14px;box-shadow:0 20px 55px rgba(11,41,55,.1)}
-		.wp-core-ui .button-primary{border-color:#087f8c;background:#087f8c}.login #backtoblog a,.login #nav a{color:#0b2937}
-		</style>';
+		wp_enqueue_style( 'pharmasure-login', PHARMASURE_CORE_URL . 'assets/css/login.css', array(), PHARMASURE_CORE_VERSION );
 	}
 
-	public static function login_url() { return is_main_site() ? network_home_url() : home_url( '/' ); }
+	public static function login_url() { return network_home_url( '/app' ); }
+	public static function login_document_title( $title, $login_title ) { return $login_title . ' | PharmaSure'; }
+	public static function login_body_class( $classes ) { $classes[] = 'pharmasure-login'; return $classes; }
+	public static function login_message( $message ) { if ( $message ) { return $message; } return '<div class="ps-login-intro"><span>PHARMACY OPERATIONS</span><strong>Secure workspace access</strong><p>Sign in with the account issued by your pharmacy administrator.</p></div>'; }
 	public static function login_title() { return is_main_site() ? 'PharmaSure Platform Administration' : get_bloginfo( 'name' ) . ' — PharmaSure'; }
 	public static function admin_title( $admin_title, $title ) { return self::is_tenant_user() ? $title . ' — ' . get_bloginfo( 'name' ) . ' | PharmaSure' : $admin_title; }
 	public static function footer_text( $text ) { return self::is_tenant_user() ? esc_html__( 'PharmaSure pharmacy operations', 'pharmasure-core' ) : $text; }

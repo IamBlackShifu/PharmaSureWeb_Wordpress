@@ -2,7 +2,7 @@
 /**
  * Plugin Name: PharmaSure Claims
  * Description: Tenant-scoped insurers, patient cover, claim lifecycle and remittance reconciliation.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires at least: 6.4
  * Requires PHP: 8.2
  * Requires Plugins: pharmasure-core, pharmasure-clinical, pharmasure-pos
@@ -11,7 +11,7 @@
 namespace PharmaSure\Claims;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DB_VERSION = '1';
 
 spl_autoload_register( static function ( $class ) {

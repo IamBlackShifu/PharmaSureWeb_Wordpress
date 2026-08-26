@@ -74,6 +74,7 @@ class Plugin {
 		// REST route registration
 		add_action( 'rest_api_init', [ Rest\TenantController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\BranchController::class, 'register_routes' ] );
+		add_action( 'rest_api_init', [ Rest\AccountController::class, 'register_routes' ] );
 
 		// Admin pages
 		add_action( 'network_admin_menu', [ Admin\TenantAdmin::class, 'register_network_pages' ] );

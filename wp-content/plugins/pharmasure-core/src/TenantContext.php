@@ -37,9 +37,21 @@ class TenantContext {
         }
         
         $this->load_memberships();
-        $saved_branch = (int) get_user_meta( $this->user_id, 'pharmasure_active_branch_id', true );
+        $saved_branch = $this->saved_branch_for_session();
         if ( $saved_branch && $this->can_access_branch( $saved_branch ) ) {
             $this->branch_id = $saved_branch;
+			$this->persist_branch_for_session( $saved_branch );
+		} else {
+			// An owner/manager has implicit access to every active branch and an
+			// operational user may have one or more explicit assignments. Start a
+			// new login session in the tenant's default authorized branch so the
+			// application never asks an authorized user to manufacture branch
+			// context in the browser.
+			$default_branch = $this->resolve_default_branch();
+			if ( $default_branch ) {
+				$this->branch_id = $default_branch;
+				$this->persist_branch_for_session( $default_branch );
+			}
         }
         $this->load_licence_snapshot();
     }
@@ -166,15 +178,62 @@ class TenantContext {
         
         $this->branch_id = (int) $branch_id;
 
-        update_user_meta( $this->user_id, 'pharmasure_active_branch_id', $this->branch_id );
-        
-        // Update session
-        if ( isset( $_SESSION ) ) {
-            $_SESSION['pharmasure_branch_id'] = $branch_id;
-        }
+		// Store selection per authenticated WordPress login token and tenant.
+		// A shared user-meta scalar made two browsers overwrite each other's
+		// working branch and could carry a stale branch into another tenant.
+		$this->persist_branch_for_session( $this->branch_id );
         
         return true;
     }
+
+	/** Return the active branch saved for this exact login session and tenant. */
+	private function saved_branch_for_session() {
+		if ( ! $this->user_id || ! $this->tenant_id ) { return 0; }
+		$preferences = get_user_meta( $this->user_id, 'pharmasure_active_branches', true );
+		$preferences = is_array( $preferences ) ? $preferences : array();
+		$key = $this->branch_preference_key();
+		$saved = (int) ( $preferences[ $key ] ?? 0 );
+		if ( $saved ) { return $saved; }
+
+		// Migrate the former scalar preference once for an existing session.
+		$legacy = (int) get_user_meta( $this->user_id, 'pharmasure_active_branch_id', true );
+		return $legacy && $this->can_access_branch( $legacy ) ? $legacy : 0;
+	}
+
+	/** Persist a bounded map so simultaneous browsers retain independent branches. */
+	private function persist_branch_for_session( $branch_id ) {
+		if ( ! $this->user_id || ! $this->tenant_id ) { return; }
+		$preferences = get_user_meta( $this->user_id, 'pharmasure_active_branches', true );
+		$preferences = is_array( $preferences ) ? $preferences : array();
+		$key = $this->branch_preference_key();
+		unset( $preferences[ $key ] );
+		$preferences[ $key ] = (int) $branch_id;
+		while ( count( $preferences ) > 24 ) { array_shift( $preferences ); }
+		update_user_meta( $this->user_id, 'pharmasure_active_branches', $preferences );
+	}
+
+	/** Key a preference by a non-reversible login-token digest and tenant. */
+	private function branch_preference_key() {
+		$token = (string) wp_get_session_token();
+		if ( '' === $token ) { $token = 'request-user-' . (int) $this->user_id; }
+		$digest = substr( hash_hmac( 'sha256', $token, wp_salt( 'auth' ) ), 0, 32 );
+		return $digest . ':' . (int) $this->tenant_id;
+	}
+
+	/** Select the tenant default, or the first active branch this user may access. */
+	private function resolve_default_branch() {
+		if ( ! $this->tenant_id || ! $this->user_id ) { return 0; }
+		global $wpdb;
+		$table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'branches';
+		$branches = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$table} WHERE tenant_id=%d AND is_active=1 ORDER BY is_default DESC,name,id",
+			$this->tenant_id
+		) );
+		foreach ( $branches as $branch_id ) {
+			if ( $this->can_access_branch( (int) $branch_id ) ) { return (int) $branch_id; }
+		}
+		return 0;
+	}
 
     /**
      * Validate branch is owned by current tenant

@@ -8,7 +8,7 @@
 namespace PharmaSure\Core;
 
 final class AppLauncher {
-	private const REWRITE_VERSION = '1';
+	private const REWRITE_VERSION = '2';
 
 	/** Move a root /app request into the authenticated user's tenant site. */
 	public static function bootstrap_context() {
@@ -37,7 +37,8 @@ final class AppLauncher {
 	}
 
 	public static function register_rewrite() {
-		add_rewrite_rule( '^app(?:/.*)?/?$', 'index.php?pharmasure_app=1', 'top' );
+		// Reserve /app/print/* for the standalone document renderer.
+		add_rewrite_rule( '^app(?:/(?!print(?:/|$)).*)?/?$', 'index.php?pharmasure_app=1', 'top' );
 		if ( self::REWRITE_VERSION !== get_site_option( 'pharmasure_app_rewrite_version' ) ) {
 			flush_rewrite_rules( false );
 			update_site_option( 'pharmasure_app_rewrite_version', self::REWRITE_VERSION );

@@ -26,7 +26,7 @@ final class PrintController {
 		$body = (array) $request->get_json_params();
 		$result = $this->service->create_job( $scope['tenant_id'], $body['document_type'] ?? '', absint( $body['entity_id'] ?? 0 ), get_current_user_id(), $context->get_correlation_id(), $scope['branch_id'] );
 		if ( is_wp_error( $result ) ) { return $result; }
-		$result['print_url'] = wp_nonce_url( admin_url( 'admin-post.php?action=pharmasure_print_document&job_id=' . $result['id'] ), 'pharmasure_print_document' );
+		$result['print_url'] = \PharmaSure\PrintModule\BrowserPrintController::print_url( $result['id'] );
 		return new \WP_REST_Response( array( 'success' => true, 'data' => $result ), 201 );
 	}
 

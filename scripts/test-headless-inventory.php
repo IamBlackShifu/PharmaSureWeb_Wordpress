@@ -43,9 +43,14 @@ $routes = rest_get_server()->get_routes();
 $assert( isset( $routes['/pharmasure/v1/inventory/workspace'] ), 'headless inventory REST endpoint is registered' );
 $controller = file_get_contents( WP_PLUGIN_DIR . '/pharmasure-inventory/src/Rest/InventoryController.php' );
 $client = file_get_contents( PHARMASURE_CORE_PATH . 'assets/js/app.js' );
+$styles = file_get_contents( PHARMASURE_CORE_PATH . 'assets/css/crisp-theme.css' );
 $assert( ! str_contains( $controller, "\$_GET['tenant_id']" ) && ! str_contains( $controller, "get_param( 'tenant_id'" ), 'REST controller never accepts client tenant scope' );
 $assert( str_contains( $client, 'renderInventory' ) && str_contains( $client, 'inventory/workspace?' ) && str_contains( $client, 'ps-inventory-tabs' ), '/app/inventory mounts the seven-view client workspace' );
 $assert( ! str_contains( $client, 'innerHTML' ), 'inventory rows render through safe DOM APIs' );
+$assert( str_contains( $client, 'inventoryCommandBar' ) && str_contains( $client, "['receipt', 'Receive stock'" ) && str_contains( $client, "lineEditor('receipt'" ), 'headless inventory exposes multi-line receiving and command workflows' );
+$assert( str_contains( $client, "openInventoryWorkflow('batch'" ) && str_contains( $client, 'collectWorkflowLines' ) && str_contains( $client, 'role: \'status\'' ), 'batch, transfer and asynchronous completion controls are keyboard-native' );
+$assert( str_contains( $styles, '.ps-workflow-dialog' ) && str_contains( $styles, '.ps-inventory-command-bar' ) && str_contains( $styles, '@media(max-width:520px)' ), 'inventory command UI has dense theme-aware responsive styling' );
+$assert( str_contains( $controller, "enforce_entitlement( 'inventory'" ) && str_contains( $controller, 'inventory_writes_monthly' ), 'inventory entry points enforce entitlement and plan write quotas' );
 
 echo "Headless inventory tests: {$pass} passed, {$fail} failed.\n";
 if ( $fail ) { throw new RuntimeException( 'Headless inventory tests failed.' ); }

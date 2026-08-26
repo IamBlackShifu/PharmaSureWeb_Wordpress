@@ -45,8 +45,8 @@ final class InventoryController {
 	}
 
 	public function can_view() { return $this->authorize( 'pharmasure_view_inventory', 'Inventory access is required.' ); }
-	public function can_manage() { return $this->authorize( 'pharmasure_manage_inventory', 'Inventory management access is required.' ); }
-	public function can_receive() { return $this->authorize( 'pharmasure_manage_stock', 'Stock management access is required.' ); }
+	public function can_manage() { return $this->authorize( 'pharmasure_manage_inventory', 'Inventory management access is required.', true ); }
+	public function can_receive() { return $this->authorize( 'pharmasure_manage_stock', 'Stock management access is required.', true ); }
 
 	public function list_drugs( $request ) { $scope = $this->scope(); return is_wp_error( $scope ) ? $scope : rest_ensure_response( $this->service->list_drugs( $scope['tenant_id'], $request->get_params() ) ); }
 	public function create_drug( $request ) { $scope = $this->scope(); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->create_drug( $scope['tenant_id'], (array) $request->get_json_params() ), 201 ); }
@@ -57,14 +57,14 @@ final class InventoryController {
 	public function update_supplier( $request ) { $scope = $this->scope(); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->update_supplier( $scope['tenant_id'], absint( $request['id'] ), (array) $request->get_json_params() ), 200 ); }
 	public function archive_supplier( $request ) { $scope = $this->scope(); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->archive_supplier( $scope['tenant_id'], absint( $request['id'] ) ), 200 ); }
 	public function stock( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : rest_ensure_response( array( 'data' => $this->service->stock_summary( $scope['tenant_id'], $scope['branch_id'] ), 'branch_id' => $scope['branch_id'] ) ); }
-	public function workspace( $request ) { $scope = $this->scope( $request, true ); if ( is_wp_error( $scope ) ) { return $scope; } $result = $this->service->workspace( $scope['tenant_id'], $scope['branch_id'], sanitize_key( $request->get_param( 'view' ) ), sanitize_text_field( $request->get_param( 'q' ) ) ); return is_wp_error( $result ) ? $result : rest_ensure_response( $result ); }
+	public function workspace( $request ) { $scope = $this->scope( $request, true ); if ( is_wp_error( $scope ) ) { return $scope; } $result = $this->service->workspace( $scope['tenant_id'], $scope['branch_id'], sanitize_key( $request->get_param( 'view' ) ), sanitize_text_field( $request->get_param( 'q' ) ) ); if ( is_wp_error( $result ) ) { return $result; } $result['permissions'] = array( 'manage_catalogue' => current_user_can( 'pharmasure_manage_inventory' ), 'manage_stock' => current_user_can( 'pharmasure_manage_stock' ) ); return rest_ensure_response( $result ); }
 	public function receive( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->receive_stock( $scope['tenant_id'], $scope['branch_id'], (array) $request->get_json_params(), TenantContext::instance()->get_correlation_id() ), 201 ); }
 	public function options( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->command_options( $scope['tenant_id'], $scope['branch_id'] ), 200 ); }
 	public function adjust( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->adjust_stock( $scope['tenant_id'], $scope['branch_id'], (array) $request->get_json_params(), TenantContext::instance()->get_correlation_id() ), 201 ); }
 	public function transfer( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->transfer_stock( $scope['tenant_id'], $scope['branch_id'], (array) $request->get_json_params(), TenantContext::instance()->get_correlation_id() ), 201 ); }
 	public function batch_status( $request ) { $scope = $this->scope( $request, true ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->change_batch_status( $scope['tenant_id'], $scope['branch_id'], absint( $request['id'] ), (array) $request->get_json_params(), TenantContext::instance()->get_correlation_id() ), 200 ); }
 
-	private function authorize( $capability, $message ) {
+	private function authorize( $capability, $message, $write = false ) {
 		if ( ! current_user_can( $capability ) ) {
 			return new \WP_Error( 'forbidden', $message, array( 'status' => 403 ) );
 		}
@@ -72,7 +72,18 @@ final class InventoryController {
 		if ( ! $tenant_id ) {
 			return new \WP_Error( 'tenant_context_required', 'No authorized tenant context is active.', array( 'status' => 403 ) );
 		}
-		return ( new LicenseManager( $tenant_id ) )->enforce_entitlement( 'inventory' );
+		$license = ( new LicenseManager( $tenant_id ) )->enforce_entitlement( 'inventory' );
+		if ( is_wp_error( $license ) ) { return $license; }
+		$monthly_limit = (int) ( $license['quotas']['inventory_writes_monthly'] ?? 0 );
+		if ( $write && $monthly_limit > 0 ) {
+			global $wpdb;
+			$table = $wpdb->prefix . 'ps_audit_events';
+			$used = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE tenant_id=%d AND event_type LIKE %s AND created_at>=UTC_DATE()-INTERVAL (DAY(UTC_DATE())-1) DAY", $tenant_id, 'inventory.%' ) );
+			if ( $used >= $monthly_limit ) {
+				return new \WP_Error( 'inventory_write_quota_exceeded', 'The monthly inventory write quota has been reached.', array( 'status' => 429 ) );
+			}
+		}
+		return true;
 	}
 
 	private function scope( $request = null, $branch_required = false ) {

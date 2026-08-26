@@ -9,13 +9,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION = '1.2.0';
-const DB_VERSION = '1';
+const VERSION = '1.3.0';
+const DB_VERSION = '2';
 
 /**
  * Plugin Name: PharmaSure Clinical
  * Description: Manages patients, prescriptions, dispensing, and medication tracking
- * Version: 1.2.0
+ * Version: 1.3.0
  * Requires Plugins: pharmasure-core, pharmasure-inventory
  */
 
@@ -43,6 +43,7 @@ class Plugin {
 
 		add_action( 'rest_api_init', [ Rest\PatientController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\PrescriptionController::class, 'register_routes' ] );
+		add_action( 'rest_api_init', [ Rest\ClinicalWorkspaceController::class, 'register_routes' ] );
 		// Inventory registers the shared PharmaSure parent menu at the default
 		// priority, so child pages must be added afterwards.
 		add_action( 'admin_menu', [ Admin\ClinicalAdmin::class, 'register_pages' ], 30 );
@@ -190,6 +191,8 @@ class PrescriptionService {
 			$inserted = $this->wpdb->insert(
 				$this->wpdb->prefix . 'ps_prescription_items',
 				[
+					'tenant_id'      => $tenant_id,
+					'branch_id'      => $branch_id,
 					'prescription_id' => $prescription_id,
 					'drug_id'        => intval( $item['drug_id'] ?? 0 ),
 					'drug_name'      => sanitize_text_field( $item['drug_name'] ?? '' ),
@@ -200,6 +203,8 @@ class PrescriptionService {
 					'duration'       => sanitize_text_field( $item['duration'] ?? '' ),
 					'quantity'       => floatval( $item['quantity'] ),
 					'repeats'        => intval( $item['repeats'] ?? 0 ),
+					'status'         => 'active',
+					'created_at'     => current_time( 'mysql', true ),
 				]
 			);
 			if ( ! $inserted ) {
@@ -338,9 +343,11 @@ namespace PharmaSure\Clinical\Rest;
 
 class PatientController {
 	private $service;
+	private $commands;
 
 	public function __construct() {
 		$this->service = new \PharmaSure\Clinical\Services\PatientService();
+		$this->commands = new \PharmaSure\Clinical\Services\ClinicalWorkspaceService();
 	}
 
 	public static function register_routes() {
@@ -352,9 +359,7 @@ class PatientController {
 			[
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => [ $controller, 'search' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_view_patients' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_view_patients' ); },
 			]
 		);
 
@@ -364,9 +369,7 @@ class PatientController {
 			[
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'create' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_manage_patients' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_manage_patients', true ); },
 			]
 		);
 	}
@@ -390,10 +393,11 @@ class PatientController {
 		if ( is_wp_error( $scope ) ) { return $scope; }
 		$params = $request->get_json_params();
 
-		$result = $this->service->create_patient(
+		$result = $this->commands->create_patient(
 			$scope['tenant_id'],
 			$scope['branch_id'],
-			$params
+			$params,
+			get_current_user_id()
 		);
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -420,7 +424,7 @@ class PrescriptionController {
 	private $service;
 
 	public function __construct() {
-		$this->service = new \PharmaSure\Clinical\Services\PrescriptionService();
+		$this->service = new \PharmaSure\Clinical\Services\ClinicalWorkspaceService();
 	}
 
 	public static function register_routes() {
@@ -432,9 +436,7 @@ class PrescriptionController {
 			[
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'create' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_manage_prescriptions' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_manage_prescriptions', true ); },
 			]
 		);
 
@@ -444,9 +446,7 @@ class PrescriptionController {
 			[
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'submit' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_manage_prescriptions' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_manage_prescriptions', true ); },
 			]
 		);
 
@@ -456,9 +456,7 @@ class PrescriptionController {
 			[
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'approve' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_review_prescriptions' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_review_prescriptions', true ); },
 			]
 		);
 
@@ -468,9 +466,7 @@ class PrescriptionController {
 			[
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => [ $controller, 'dispense' ],
-				'permission_callback' => function () {
-					return current_user_can( 'pharmasure_dispense_medications' );
-				},
+				'permission_callback' => function () { return ClinicalAccess::authorize( 'pharmasure_dispense_medications', true ); },
 			]
 		);
 	}
@@ -483,7 +479,8 @@ class PrescriptionController {
 		$result = $this->service->create_prescription(
 			$scope['tenant_id'],
 			$scope['branch_id'],
-			$params
+			$params,
+			get_current_user_id()
 		);
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -494,7 +491,7 @@ class PrescriptionController {
 	public function submit( $request ) {
 		$scope = $this->scope( $request );
 		if ( is_wp_error( $scope ) ) { return $scope; }
-		return $this->service->submit_for_review( $scope['tenant_id'], $scope['branch_id'], intval( $request->get_param( 'id' ) ) );
+		return $this->service->submit( $scope['tenant_id'], $scope['branch_id'], intval( $request->get_param( 'id' ) ), get_current_user_id() );
 	}
 
 	public function approve( $request ) {
@@ -502,10 +499,13 @@ class PrescriptionController {
 		if ( is_wp_error( $scope ) ) { return $scope; }
 		$prescription_id = intval( $request->get_param( 'id' ) );
 
-		$result = $this->service->approve_prescription(
+		$params = (array) $request->get_json_params();
+		$params['outcome'] = 'approve';
+		$result = $this->service->review(
 			$scope['tenant_id'],
 			$scope['branch_id'],
 			$prescription_id,
+			$params,
 			get_current_user_id()
 		);
 		if ( is_wp_error( $result ) ) {
@@ -520,16 +520,15 @@ class PrescriptionController {
 		$prescription_id = intval( $request->get_param( 'id' ) );
 		$params = $request->get_json_params();
 
-		$result = $this->service->dispense_prescription(
+		$result = $this->service->dispense(
 			$scope['tenant_id'],
 			$scope['branch_id'],
 			$prescription_id,
-			$params
+			$params,
+			get_current_user_id()
 		);
 
-		if ( is_wp_error( $result ) ) {
-			return new \WP_REST_Response( $result->get_error_data(), 400 );
-		}
+		if ( is_wp_error( $result ) ) { return $result; }
 
 		return rest_ensure_response( $result );
 	}

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: PharmaSure POS
  * Description: Branch-scoped tills, itemized sales, split tenders and atomic FEFO checkout.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Requires at least: 6.4
  * Requires PHP: 8.2
  * Requires Plugins: pharmasure-core, pharmasure-inventory
@@ -11,7 +11,7 @@
 namespace PharmaSure\POS;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const DB_VERSION = '7';
 
 spl_autoload_register( static function ( $class ) {

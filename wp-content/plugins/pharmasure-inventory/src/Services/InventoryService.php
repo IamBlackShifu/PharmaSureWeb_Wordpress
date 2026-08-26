@@ -56,6 +56,9 @@ final class InventoryService {
 		if ( ! $before ) {
 			return new \WP_Error( 'drug_not_found', 'Medicine was not found in the current tenant.', array( 'status' => 404 ) );
 		}
+		if ( 'active' !== $before['status'] ) {
+			return new \WP_Error( 'drug_archived', 'Archived medicines are read-only.', array( 'status' => 409 ) );
+		}
 		$sku = sanitize_text_field( $data['sku'] ?? $before['sku'] );
 		$name = sanitize_text_field( $data['name'] ?? $before['name'] );
 		if ( '' === $sku || '' === $name ) {
@@ -120,6 +123,9 @@ final class InventoryService {
 		if ( ! $before ) {
 			return new \WP_Error( 'supplier_not_found', 'Supplier was not found in the current tenant.', array( 'status' => 404 ) );
 		}
+		if ( 'active' !== $before['status'] ) {
+			return new \WP_Error( 'supplier_archived', 'Archived suppliers are read-only.', array( 'status' => 409 ) );
+		}
 		$name = sanitize_text_field( $data['name'] ?? $before['name'] );
 		if ( '' === $name ) {
 			return new \WP_Error( 'invalid_supplier', 'Supplier name is required.', array( 'status' => 422 ) );
@@ -155,16 +161,22 @@ final class InventoryService {
 		$items = $data['items'] ?? array();
 		$supplier_id = (int) ( $data['supplier_id'] ?? 0 );
 		$received_date = sanitize_text_field( $data['received_date'] ?? gmdate( 'Y-m-d' ) );
-		if ( ! $branch_id || ! $supplier_id || ! is_array( $items ) || empty( $items ) || ! $this->valid_date( $received_date ) ) {
+		if ( ! $branch_id || ! $supplier_id || ! is_array( $items ) || empty( $items ) || ! $this->valid_date( $received_date ) || $received_date > gmdate( 'Y-m-d' ) ) {
 			return new \WP_Error( 'invalid_receipt', 'Branch, supplier, received date and at least one item are required.', array( 'status' => 422 ) );
 		}
-		if ( ! $this->owns( 'branches', $tenant_id, $branch_id ) || ! $this->owns( 'suppliers', $tenant_id, $supplier_id ) ) {
+		if ( ! $this->owns_active_branch( $tenant_id, $branch_id ) || ! $this->owns_active_record( 'suppliers', $tenant_id, $supplier_id ) ) {
 			return new \WP_Error( 'invalid_scope', 'Branch or supplier does not belong to the current tenant.', array( 'status' => 403 ) );
 		}
+		$seen_receipt_batches = array();
 		foreach ( $items as $item ) {
 			if ( ! $this->validate_receipt_item( $tenant_id, $item, $received_date ) ) {
 				return new \WP_Error( 'invalid_receipt_item', 'Each item needs an owned drug, batch number, positive quantity, non-negative cost and valid future expiry.', array( 'status' => 422 ) );
 			}
+			$key = (int) $item['drug_id'] . ':' . strtolower( sanitize_text_field( $item['batch_number'] ) );
+			if ( isset( $seen_receipt_batches[ $key ] ) ) {
+				return new \WP_Error( 'duplicate_receipt_batch', 'A batch may appear only once on a receipt.', array( 'status' => 422 ) );
+			}
+			$seen_receipt_batches[ $key ] = true;
 		}
 
 		$this->db->query( 'START TRANSACTION' );
@@ -176,6 +188,8 @@ final class InventoryService {
 				$drug_id = (int) $item['drug_id']; $qty = (float) $item['quantity']; $batch_number = sanitize_text_field( $item['batch_number'] );
 				$cost = (int) $item['unit_cost_minor']; $price = max( 0, (int) ( $item['selling_price_minor'] ?? 0 ) ); $expiry = sanitize_text_field( $item['expiry_date'] );
 				$manufacture = empty( $item['manufacture_date'] ) ? null : sanitize_text_field( $item['manufacture_date'] );
+				$existing_batch = $this->db->get_row( $this->db->prepare( "SELECT id,status,expiry_date FROM {$this->p}batches WHERE tenant_id=%d AND branch_id=%d AND drug_id=%d AND batch_number=%s FOR UPDATE", $tenant_id, $branch_id, $drug_id, $batch_number ), ARRAY_A );
+				if ( $existing_batch && ( 'active' !== $existing_batch['status'] || $expiry !== $existing_batch['expiry_date'] ) ) { throw new \DomainException( 'batch_conflict' ); }
 				$this->must_insert( 'stock_receipt_lines', array( 'tenant_id' => $tenant_id, 'receipt_id' => $receipt_id, 'drug_id' => $drug_id, 'batch_number' => $batch_number, 'quantity' => $qty, 'unit_cost_minor' => $cost, 'selling_price_minor' => $price, 'manufacture_date' => $manufacture, 'expiry_date' => $expiry, 'status' => 'completed', 'created_at' => $now ) );
 				$this->db->query( $this->db->prepare( "INSERT INTO {$this->p}batches (tenant_id,branch_id,drug_id,supplier_id,batch_number,manufacture_date,expiry_date,quantity_received,quantity_available,unit_cost_minor,selling_price_minor,status,created_at,updated_at) VALUES (%d,%d,%d,%d,%s,%s,%s,%f,%f,%d,%d,'active',%s,%s) ON DUPLICATE KEY UPDATE quantity_received=quantity_received+VALUES(quantity_received),quantity_available=quantity_available+VALUES(quantity_available),unit_cost_minor=VALUES(unit_cost_minor),selling_price_minor=VALUES(selling_price_minor),expiry_date=VALUES(expiry_date),updated_at=VALUES(updated_at)", $tenant_id, $branch_id, $drug_id, $supplier_id, $batch_number, $manufacture, $expiry, $qty, $qty, $cost, $price, $now, $now ) );
 				if ( $this->db->last_error ) { throw new \RuntimeException( $this->db->last_error ); }
@@ -187,6 +201,9 @@ final class InventoryService {
 			$this->db->query( 'COMMIT' );
 			do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'action' => 'inventory.stock_received', 'object_type' => 'stock_receipt', 'object_id' => $receipt_id, 'status' => 'success', 'details' => array( 'branch_id' => $branch_id, 'items' => count( $items ) ) ) );
 			return array( 'id' => $receipt_id, 'items_received' => count( $items ) );
+		} catch ( \DomainException $e ) {
+			$this->db->query( 'ROLLBACK' );
+			return new \WP_Error( 'receipt_batch_conflict', 'An existing batch is unavailable or has a different expiry date.', array( 'status' => 409 ) );
 		} catch ( \Throwable $e ) {
 			$this->db->query( 'ROLLBACK' );
 			return new \WP_Error( 'receipt_failed', 'No stock was changed because the receipt could not be completed.', array( 'status' => 500 ) );
@@ -223,7 +240,7 @@ final class InventoryService {
 			foreach ( $items as $item ) {
 				$batch_id = (int) ( $item['batch_id'] ?? 0 );
 				$delta = round( (float) ( $item['quantity_delta'] ?? 0 ), 3 );
-				if ( ! $batch_id || 0.0 === $delta || isset( $seen[ $batch_id ] ) ) { throw new \DomainException( 'invalid_line' ); }
+				if ( ! $batch_id || 0.0 === $delta || isset( $seen[ $batch_id ] ) || ( in_array( $reason_code, array( 'damage', 'loss' ), true ) && $delta > 0 ) || ( 'return_to_stock' === $reason_code && $delta < 0 ) ) { throw new \DomainException( 'invalid_line' ); }
 				$seen[ $batch_id ] = true;
 				$batch = $this->db->get_row( $this->db->prepare( "SELECT id,drug_id,quantity_available,unit_cost_minor,status,expiry_date FROM {$this->p}batches WHERE id=%d AND tenant_id=%d AND branch_id=%d FOR UPDATE", $batch_id, $tenant_id, $branch_id ), ARRAY_A );
 				if ( ! $batch || 'active' !== $batch['status'] || $batch['expiry_date'] <= gmdate( 'Y-m-d' ) || (float) $batch['quantity_available'] + $delta < 0 ) { throw new \DomainException( 'invalid_line' ); }
@@ -255,7 +272,8 @@ final class InventoryService {
 		$this->db->query( 'START TRANSACTION' );
 		try {
 			$batch = $this->db->get_row( $this->db->prepare( "SELECT id,drug_id,quantity_available,unit_cost_minor,status,expiry_date FROM {$this->p}batches WHERE id=%d AND tenant_id=%d AND branch_id=%d FOR UPDATE", $batch_id, $tenant_id, $branch_id ), ARRAY_A );
-			if ( ! $batch || $batch['status'] === $new_status || ( 'active' === $new_status && $batch['expiry_date'] <= gmdate( 'Y-m-d' ) ) ) { throw new \DomainException( 'invalid_transition' ); }
+			$transitions = array( 'active' => array( 'quarantined', 'expired', 'withdrawn' ), 'quarantined' => array( 'active', 'expired', 'withdrawn' ), 'expired' => array(), 'withdrawn' => array() );
+			if ( ! $batch || ! in_array( $new_status, $transitions[ $batch['status'] ] ?? array(), true ) || ( 'active' === $new_status && $batch['expiry_date'] <= gmdate( 'Y-m-d' ) ) || ( 'expired' === $new_status && $batch['expiry_date'] > gmdate( 'Y-m-d' ) ) ) { throw new \DomainException( 'invalid_transition' ); }
 			$was_available = 'active' === $batch['status'];
 			$will_be_available = 'active' === $new_status;
 			$available_delta = ( $will_be_available ? 1 : 0 ) * (float) $batch['quantity_available'] - ( $was_available ? 1 : 0 ) * (float) $batch['quantity_available'];
@@ -297,7 +315,7 @@ final class InventoryService {
 			foreach ( $items as $item ) {
 				$drug_id = (int) ( $item['drug_id'] ?? 0 );
 				$required = round( (float) ( $item['quantity'] ?? 0 ), 3 );
-				if ( ! $drug_id || $required <= 0 || isset( $seen[ $drug_id ] ) || ! $this->owns( 'drugs', $tenant_id, $drug_id ) ) { throw new \DomainException( 'invalid_item' ); }
+				if ( ! $drug_id || $required <= 0 || isset( $seen[ $drug_id ] ) || ! $this->owns_active_record( 'drugs', $tenant_id, $drug_id ) ) { throw new \DomainException( 'invalid_item' ); }
 				$seen[ $drug_id ] = true;
 				$batches = $this->db->get_results( $this->db->prepare( "SELECT id,supplier_id,batch_number,manufacture_date,expiry_date,quantity_available,unit_cost_minor,selling_price_minor FROM {$this->p}batches WHERE tenant_id=%d AND branch_id=%d AND drug_id=%d AND status='active' AND quantity_available>0 AND expiry_date>UTC_DATE() ORDER BY expiry_date,id FOR UPDATE", $tenant_id, $from_branch_id, $drug_id ), ARRAY_A );
 				$remaining = $required;
@@ -423,11 +441,18 @@ final class InventoryService {
 
 	private function validate_receipt_item( $tenant_id, array $item, $received_date ) {
 		$expiry = sanitize_text_field( $item['expiry_date'] ?? '' );
-		return $this->owns( 'drugs', $tenant_id, (int) ( $item['drug_id'] ?? 0 ) ) && '' !== sanitize_text_field( $item['batch_number'] ?? '' ) && (float) ( $item['quantity'] ?? 0 ) > 0 && (int) ( $item['unit_cost_minor'] ?? -1 ) >= 0 && $this->valid_date( $expiry ) && $expiry > $received_date;
+		$manufacture = sanitize_text_field( $item['manufacture_date'] ?? '' );
+		$manufacture_valid = '' === $manufacture || ( $this->valid_date( $manufacture ) && $manufacture <= $received_date );
+		return $this->owns_active_record( 'drugs', $tenant_id, (int) ( $item['drug_id'] ?? 0 ) ) && '' !== sanitize_text_field( $item['batch_number'] ?? '' ) && is_numeric( $item['quantity'] ?? null ) && (float) $item['quantity'] > 0 && is_numeric( $item['unit_cost_minor'] ?? null ) && (int) $item['unit_cost_minor'] >= 0 && (int) ( $item['selling_price_minor'] ?? 0 ) >= 0 && $manufacture_valid && $this->valid_date( $expiry ) && $expiry > $received_date;
 	}
 
 	private function owns_active_branch( $tenant_id, $branch_id ) {
 		return (bool) $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}branches WHERE id=%d AND tenant_id=%d AND is_active=1", $branch_id, $tenant_id ) );
+	}
+
+	private function owns_active_record( $table, $tenant_id, $id ) {
+		if ( ! in_array( $table, array( 'drugs', 'suppliers' ), true ) ) { return false; }
+		return (bool) $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}{$table} WHERE id=%d AND tenant_id=%d AND status='active'", $id, $tenant_id ) );
 	}
 
 	private function reference_number( $prefix ) {

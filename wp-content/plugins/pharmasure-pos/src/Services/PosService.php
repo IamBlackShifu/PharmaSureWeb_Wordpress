@@ -13,9 +13,12 @@ final class PosService {
 	public function create_till( $tenant_id, $branch_id, array $data ) {
 		$name = sanitize_text_field( $data['name'] ?? '' );
 		$code = strtoupper( sanitize_key( $data['code'] ?? '' ) );
-		if ( ! $name || ! $code ) { return new \WP_Error( 'invalid_till', 'Till name and code are required.', array( 'status' => 422 ) ); }
+		if ( ! $name || ! $code || ! $this->owns_active_branch( $tenant_id, $branch_id ) ) { return new \WP_Error( 'invalid_till', 'An active branch, till name and code are required.', array( 'status' => 422 ) ); }
 		$ok = $this->db->insert( $this->p . 'tills', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'name' => $name, 'code' => $code, 'status' => 'active', 'created_at' => current_time( 'mysql', true ), 'created_by' => get_current_user_id() ) );
-		return false === $ok ? new \WP_Error( 'till_not_created', 'Till code must be unique in this branch.', array( 'status' => 409 ) ) : array( 'id' => (int) $this->db->insert_id );
+		if ( false === $ok ) { return new \WP_Error( 'till_not_created', 'Till code must be unique in this branch.', array( 'status' => 409 ) ); }
+		$id = (int) $this->db->insert_id;
+		$this->audit( $tenant_id, get_current_user_id(), 'pos.till_created', 'till', $id, array( 'branch_id' => $branch_id, 'code' => $code ) );
+		return array( 'id' => $id );
 	}
 
 	public function open_session( $tenant_id, $branch_id, $till_id, $cashier_id, $opening_float_minor ) {
@@ -25,9 +28,13 @@ final class PosService {
 		if ( ! $till ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'invalid_till', 'An active branch till and non-negative opening float are required.', array( 'status' => 422 ) ); }
 		$open = $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}till_sessions WHERE tenant_id=%d AND branch_id=%d AND till_id=%d AND status='open' LIMIT 1", $tenant_id, $branch_id, $till_id ) );
 		if ( $open ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'till_already_open', 'This till already has an open session.', array( 'status' => 409 ) ); }
+		$cashier_open = $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}till_sessions WHERE tenant_id=%d AND branch_id=%d AND cashier_id=%d AND status='open' LIMIT 1", $tenant_id, $branch_id, $cashier_id ) );
+		if ( $cashier_open ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'cashier_session_open', 'This cashier already has an open session in the branch.', array( 'status' => 409 ) ); }
 		$ok = $this->db->insert( $this->p . 'till_sessions', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'till_id' => $till_id, 'cashier_id' => $cashier_id, 'status' => 'open', 'opening_float_minor' => (int) $opening_float_minor, 'opened_at' => current_time( 'mysql', true ) ) );
 		if ( false === $ok ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'session_not_opened', 'Till session could not be opened.', array( 'status' => 500 ) ); }
-		$id = (int) $this->db->insert_id; $this->db->query( 'COMMIT' ); return array( 'id' => $id );
+		$id = (int) $this->db->insert_id; $this->db->query( 'COMMIT' );
+		$this->audit( $tenant_id, $cashier_id, 'pos.till_opened', 'till_session', $id, array( 'branch_id' => $branch_id, 'till_id' => $till_id, 'opening_float_minor' => (int) $opening_float_minor ) );
+		return array( 'id' => $id );
 	}
 
 	public function close_session( $tenant_id, $branch_id, $session_id, $cashier_id, $counted_cash_minor ) {
@@ -35,11 +42,11 @@ final class PosService {
 		$this->db->query( 'START TRANSACTION' );
 		$session = $this->db->get_row( $this->db->prepare( "SELECT * FROM {$this->p}till_sessions WHERE id=%d AND tenant_id=%d AND branch_id=%d AND cashier_id=%d AND status='open' FOR UPDATE", $session_id, $tenant_id, $branch_id, $cashier_id ), ARRAY_A );
 		if ( ! $session ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'invalid_till_session', 'Open till session not found for this cashier.', array( 'status' => 409 ) ); }
-		$cash_sales = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(p.amount_minor),0) FROM {$this->p}sale_payments p JOIN {$this->p}sales s ON s.id=p.sale_id AND s.tenant_id=p.tenant_id WHERE s.till_session_id=%d AND p.method='cash' AND p.status='captured'", $session_id ) );
-		$cash_refunds = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(rp.amount_minor),0) FROM {$this->p}refund_payments rp JOIN {$this->p}refunds r ON r.id=rp.refund_id JOIN {$this->p}sales s ON s.id=r.sale_id WHERE s.till_session_id=%d AND rp.method='cash' AND rp.status='completed'", $session_id ) );
+		$cash_sales = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(p.amount_minor),0) FROM {$this->p}sale_payments p JOIN {$this->p}sales s ON s.id=p.sale_id AND s.tenant_id=p.tenant_id AND s.branch_id=p.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.till_session_id=%d AND p.tenant_id=%d AND p.branch_id=%d AND p.method='cash' AND p.status='captured'", $tenant_id, $branch_id, $session_id, $tenant_id, $branch_id ) );
+		$cash_refunds = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(rp.amount_minor),0) FROM {$this->p}refund_payments rp JOIN {$this->p}refunds r ON r.id=rp.refund_id AND r.tenant_id=rp.tenant_id JOIN {$this->p}sales s ON s.id=r.sale_id AND s.tenant_id=r.tenant_id AND s.branch_id=r.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.till_session_id=%d AND rp.tenant_id=%d AND rp.method='cash' AND rp.status='completed'", $tenant_id, $branch_id, $session_id, $tenant_id ) );
 		$expected = (int) $session['opening_float_minor'] + $cash_sales - $cash_refunds;
 		$variance = (int) $counted_cash_minor - $expected;
-		$updated = $this->db->update( $this->p . 'till_sessions', array( 'status' => 'closed', 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => $variance, 'variance_status' => 0 === $variance ? 'not_required' : 'pending', 'closed_at' => current_time( 'mysql', true ) ), array( 'id' => $session_id, 'status' => 'open' ) );
+		$updated = $this->db->update( $this->p . 'till_sessions', array( 'status' => 'closed', 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => $variance, 'variance_status' => 0 === $variance ? 'not_required' : 'pending', 'closed_at' => current_time( 'mysql', true ) ), array( 'id' => $session_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'cashier_id' => $cashier_id, 'status' => 'open' ) );
 		if ( 1 !== $updated ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'session_not_closed', 'Till session could not be closed.', array( 'status' => 409 ) ); }
 		$this->db->query( 'COMMIT' );
 		do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $cashier_id, 'action' => 'pos.till_closed', 'object_type' => 'till_session', 'object_id' => $session_id, 'details' => array( 'branch_id' => $branch_id, 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => (int) $counted_cash_minor - $expected ) ) );
@@ -66,6 +73,36 @@ final class PosService {
 		), ARRAY_A );
 	}
 
+	/** Build the complete branch and cashier state for the standalone POS shell. */
+	public function workspace( $tenant_id, $branch_id, $cashier_id ) {
+		if ( ! $this->owns_active_branch( $tenant_id, $branch_id ) ) {
+			return new \WP_Error( 'invalid_pos_scope', 'An authorized active branch is required.', array( 'status' => 403 ) );
+		}
+		$scope = $this->db->get_row( $this->db->prepare( "SELECT t.trading_name,t.currency,b.name branch_name FROM {$this->p}tenants t JOIN {$this->p}branches b ON b.tenant_id=t.id AND b.id=%d AND b.is_active=1 WHERE t.id=%d", $branch_id, $tenant_id ), ARRAY_A );
+		$tills = $this->db->get_results( $this->db->prepare( "SELECT t.id,t.name,t.code,t.status,s.id session_id,s.cashier_id,s.opened_at FROM {$this->p}tills t LEFT JOIN {$this->p}till_sessions s ON s.tenant_id=t.tenant_id AND s.branch_id=t.branch_id AND s.till_id=t.id AND s.status='open' WHERE t.tenant_id=%d AND t.branch_id=%d AND t.status='active' ORDER BY t.name", $tenant_id, $branch_id ), ARRAY_A );
+		$session = $this->db->get_row( $this->db->prepare( "SELECT s.id,s.till_id,s.opening_float_minor,s.opened_at,t.name till_name,t.code till_code FROM {$this->p}till_sessions s JOIN {$this->p}tills t ON t.id=s.till_id AND t.tenant_id=s.tenant_id AND t.branch_id=s.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.cashier_id=%d AND s.status='open' ORDER BY s.opened_at DESC LIMIT 1", $tenant_id, $branch_id, $cashier_id ), ARRAY_A );
+		$products = $this->db->get_results( $this->db->prepare( "SELECT d.id,d.sku,d.barcode,d.name,d.generic_name,d.strength,d.dosage_form,d.selling_price_minor,d.requires_prescription,COALESCE(s.quantity_available,0) quantity_available FROM {$this->p}drugs d JOIN {$this->p}stock_balances s ON s.tenant_id=d.tenant_id AND s.drug_id=d.id AND s.branch_id=%d WHERE d.tenant_id=%d AND d.status='active' AND s.quantity_available>0 ORDER BY d.requires_prescription,d.name LIMIT %d", $branch_id, $tenant_id, 18 ), ARRAY_A );
+		$sales = $this->db->get_results( $this->db->prepare( "SELECT s.id,s.receipt_number,s.subtotal_amount_minor,s.discount_amount_minor,s.tax_amount_minor,s.total_amount_minor,s.status,s.created_at,COUNT(si.id) item_count FROM {$this->p}sales s LEFT JOIN {$this->p}sale_items si ON si.tenant_id=s.tenant_id AND si.branch_id=s.branch_id AND si.sale_id=s.id WHERE s.tenant_id=%d AND s.branch_id=%d GROUP BY s.id,s.receipt_number,s.subtotal_amount_minor,s.discount_amount_minor,s.tax_amount_minor,s.total_amount_minor,s.status,s.created_at ORDER BY s.created_at DESC,s.id DESC LIMIT %d", $tenant_id, $branch_id, 20 ), ARRAY_A );
+		foreach ( $sales as &$sale ) {
+			$sale['items'] = $this->db->get_results( $this->db->prepare( "SELECT drug_id,description,quantity,unit_price_minor,line_total_minor FROM {$this->p}sale_items WHERE tenant_id=%d AND branch_id=%d AND sale_id=%d ORDER BY id", $tenant_id, $branch_id, $sale['id'] ), ARRAY_A );
+			$sale['payments'] = $this->db->get_results( $this->db->prepare( "SELECT method,amount_minor,currency,external_reference,status FROM {$this->p}sale_payments WHERE tenant_id=%d AND branch_id=%d AND sale_id=%d ORDER BY id", $tenant_id, $branch_id, $sale['id'] ), ARRAY_A );
+		}
+		unset( $sale );
+		$metrics = $this->db->get_row( $this->db->prepare( "SELECT COUNT(*) transaction_count,COALESCE(SUM(CASE WHEN status<>'voided' THEN total_amount_minor ELSE 0 END),0) gross_minor,COALESCE(SUM(CASE WHEN status='voided' THEN total_amount_minor ELSE 0 END),0) voided_minor FROM {$this->p}sales WHERE tenant_id=%d AND branch_id=%d AND created_at>=UTC_DATE()", $tenant_id, $branch_id ), ARRAY_A );
+		$metrics['refund_minor'] = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(amount_minor),0) FROM {$this->p}refunds WHERE tenant_id=%d AND branch_id=%d AND status IN ('completed','pending_provider') AND created_at>=UTC_DATE()", $tenant_id, $branch_id ) );
+		$metrics['net_minor'] = (int) $metrics['gross_minor'] - (int) $metrics['refund_minor'];
+		return array(
+			'scope' => $scope,
+			'session' => $session ?: null,
+			'tills' => $tills ?: array(),
+			'products' => $products ?: array(),
+			'holds' => $this->list_holds( $tenant_id, $branch_id ),
+			'recent_sales' => $sales ?: array(),
+			'metrics' => $metrics,
+			'pricing' => $this->pricing_policy( $tenant_id, $branch_id ),
+		);
+	}
+
 	public function configure_pricing( $tenant_id, $branch_id, $tax_rate_bps, $max_discount_bps ) {
 		$tax_rate_bps = (int) $tax_rate_bps; $max_discount_bps = (int) $max_discount_bps;
 		if ( $tax_rate_bps < 0 || $tax_rate_bps > 10000 || $max_discount_bps < 0 || $max_discount_bps > 10000 ) { return new \WP_Error( 'invalid_pricing_policy', 'Tax and discount basis points must be between 0 and 10000.', array( 'status' => 422 ) ); }
@@ -73,6 +110,7 @@ final class PosService {
 			$sql = $this->db->prepare( "INSERT INTO {$this->p}settings (tenant_id,branch_id,setting_key,setting_value,created_at,updated_at) VALUES (%d,%d,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_at=VALUES(updated_at)", $tenant_id, $branch_id, $key, (string) $value, current_time( 'mysql', true ), current_time( 'mysql', true ) );
 			$this->db->query( $sql ); if ( $this->db->last_error ) { return new \WP_Error( 'pricing_not_saved', 'Pricing policy could not be saved.', array( 'status' => 500 ) ); }
 		}
+		$this->audit( $tenant_id, get_current_user_id(), 'pos.pricing_configured', 'branch', $branch_id, array( 'tax_rate_bps' => $tax_rate_bps, 'max_discount_bps' => $max_discount_bps ) );
 		return array( 'tax_rate_bps' => $tax_rate_bps, 'max_discount_bps' => $max_discount_bps );
 	}
 
@@ -101,7 +139,9 @@ final class PosService {
 		$taxable = $subtotal - $discount;
 		$tax = (int) round( $taxable * $policy['tax_rate_bps'] / 10000 );
 		$total = $taxable + $tax;
-		$valid_payments = $this->normalize_payments( $payments );
+		$currency = strtoupper( (string) $this->db->get_var( $this->db->prepare( "SELECT currency FROM {$this->p}tenants WHERE id=%d", $tenant_id ) ) );
+		if ( ! preg_match( '/^[A-Z]{3}$/', $currency ) ) { $currency = 'USD'; }
+		$valid_payments = $this->normalize_payments( $payments, $currency );
 		if ( is_wp_error( $valid_payments ) ) { return $valid_payments; }
 		if ( array_sum( array_column( $valid_payments, 'amount_minor' ) ) !== $total ) {
 			return new \WP_Error( 'payment_mismatch', 'Payment amounts must exactly equal the sale total.', array( 'status' => 422, 'total_amount_minor' => $total ) );
@@ -111,6 +151,8 @@ final class PosService {
 		try {
 			$session = $this->db->get_row( $this->db->prepare( "SELECT * FROM {$this->p}till_sessions WHERE id=%d AND tenant_id=%d AND branch_id=%d AND cashier_id=%d AND status='open' FOR UPDATE", $session_id, $tenant_id, $branch_id, $cashier_id ), ARRAY_A );
 			if ( ! $session ) { throw new \DomainException( 'No open till session belongs to this cashier and branch.' ); }
+			$hold_id = absint( $data['hold_id'] ?? 0 );
+			if ( $hold_id && ! $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}sale_holds WHERE id=%d AND tenant_id=%d AND branch_id=%d AND till_session_id=%d AND held_by=%d AND status='held' FOR UPDATE", $hold_id, $tenant_id, $branch_id, $session_id, $cashier_id ) ) ) { throw new \DomainException( 'The held sale is no longer active in this till session.' ); }
 			$patient_id = empty( $data['patient_id'] ) ? null : (int) $data['patient_id'];
 			if ( $patient_id && ! $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}patients WHERE id=%d AND tenant_id=%d AND branch_id=%d AND status='active'", $patient_id, $tenant_id, $branch_id ) ) ) { throw new \DomainException( 'Patient does not belong to this tenant and branch.' ); }
 			$receipt = $this->next_receipt( $tenant_id, $branch_id );
@@ -123,11 +165,12 @@ final class PosService {
 				$allocation = $allocator->consume_fefo( $tenant_id, $branch_id, $item['drug_id'], $item['quantity'], 'sale', $sale_id, $correlation_id, 'POS sale ' . $receipt );
 				if ( is_wp_error( $allocation ) ) { $this->db->query( 'ROLLBACK' ); return $allocation; }
 				$cost = array_sum( array_map( static fn( $batch ) => (int) ( $batch['cost_amount_minor'] ?? 0 ), $allocation ) );
-				if ( false === $this->db->update( $this->p . 'sale_items', array( 'cost_amount_minor' => $cost ), array( 'sale_id' => $sale_id, 'drug_id' => $item['drug_id'] ) ) ) { throw new \RuntimeException( 'Historical sale cost could not be captured.' ); }
+				if ( false === $this->db->update( $this->p . 'sale_items', array( 'cost_amount_minor' => $cost ), array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'sale_id' => $sale_id, 'drug_id' => $item['drug_id'] ) ) ) { throw new \RuntimeException( 'Historical sale cost could not be captured.' ); }
 			}
 			foreach ( $valid_payments as $payment ) { $payment['tenant_id'] = $tenant_id; $payment['branch_id'] = $branch_id; $payment['sale_id'] = $sale_id; $payment['created_at'] = $now; $this->must_insert( 'sale_payments', $payment ); }
+			if ( $hold_id && 1 !== $this->db->update( $this->p . 'sale_holds', array( 'status' => 'completed' ), array( 'id' => $hold_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'till_session_id' => $session_id, 'held_by' => $cashier_id, 'status' => 'held' ) ) ) { throw new \RuntimeException( 'Held-sale completion could not be recorded.' ); }
 			$this->db->query( 'COMMIT' );
-			do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $cashier_id, 'action' => 'pos.sale_completed', 'object_type' => 'sale', 'object_id' => $sale_id, 'details' => array( 'branch_id' => $branch_id, 'receipt_number' => $receipt, 'subtotal_amount_minor' => $subtotal, 'discount_amount_minor' => $discount, 'discount_reason' => $discount_reason, 'tax_amount_minor' => $tax, 'total_amount_minor' => $total, 'payment_count' => count( $valid_payments ) ) ) );
+			do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $cashier_id, 'action' => 'pos.sale_completed', 'object_type' => 'sale', 'object_id' => $sale_id, 'details' => array( 'branch_id' => $branch_id, 'receipt_number' => $receipt, 'subtotal_amount_minor' => $subtotal, 'discount_amount_minor' => $discount, 'discount_reason' => $discount_reason, 'tax_amount_minor' => $tax, 'total_amount_minor' => $total, 'payment_count' => count( $valid_payments ), 'resumed_hold_id' => $hold_id ?: null ) ) );
 			return array( 'id' => $sale_id, 'receipt_number' => $receipt, 'subtotal_amount_minor' => $subtotal, 'discount_amount_minor' => $discount, 'tax_amount_minor' => $tax, 'total_amount_minor' => $total, 'idempotent_replay' => false );
 		} catch ( \DomainException $error ) {
 			$this->db->query( 'ROLLBACK' );
@@ -156,12 +199,12 @@ final class PosService {
 		return $out;
 	}
 
-	private function normalize_payments( array $payments ) {
+	private function normalize_payments( array $payments, $currency = 'USD' ) {
 		$out = array();
 		foreach ( $payments as $payment ) {
 			$method = sanitize_key( $payment['method'] ?? '' ); $amount = (int) ( $payment['amount_minor'] ?? 0 ); $reference = sanitize_text_field( $payment['external_reference'] ?? '' );
 			if ( ! in_array( $method, self::PAYMENT_METHODS, true ) || $amount <= 0 || ( 'cash' !== $method && ! $reference ) ) { return new \WP_Error( 'invalid_payment', 'Each tender needs a supported method, positive amount and external reference for non-cash payments.', array( 'status' => 422 ) ); }
-			$out[] = array( 'method' => $method, 'amount_minor' => $amount, 'currency' => 'USD', 'external_reference' => $reference ?: null, 'status' => 'cash' === $method ? 'captured' : 'recorded' );
+			$out[] = array( 'method' => $method, 'amount_minor' => $amount, 'currency' => $currency, 'external_reference' => $reference ?: null, 'status' => 'cash' === $method ? 'captured' : 'recorded' );
 		}
 		return $out;
 	}
@@ -208,7 +251,7 @@ final class PosService {
 			$existing_refund = $this->db->get_row( $this->db->prepare( "SELECT id,sale_id,amount_minor,status FROM {$this->p}refunds WHERE tenant_id=%d AND idempotency_key=%s", $tenant_id, $idempotency ), ARRAY_A );
 			if ( $existing_refund ) { $this->db->query( 'ROLLBACK' ); if ( (int) $existing_refund['sale_id'] !== (int) $sale_id ) { return new \WP_Error( 'refund_idempotency_conflict', 'Refund idempotency key belongs to another sale.', array( 'status' => 409 ) ); } $existing_refund['idempotent_replay'] = true; return $existing_refund; }
 			if ( ! in_array( $sale['status'], array( 'completed', 'partially_refunded' ), true ) ) { throw new \DomainException( 'Sale is no longer refundable.' ); }
-			$sale_items = $this->db->get_results( $this->db->prepare( "SELECT drug_id,description,quantity,unit_price_minor FROM {$this->p}sale_items WHERE sale_id=%d AND tenant_id=%d ORDER BY id", $sale_id, $tenant_id ), ARRAY_A );
+			$sale_items = $this->db->get_results( $this->db->prepare( "SELECT drug_id,description,quantity,unit_price_minor FROM {$this->p}sale_items WHERE sale_id=%d AND tenant_id=%d AND branch_id=%d ORDER BY id", $sale_id, $tenant_id, $branch_id ), ARRAY_A );
 			$requested = array(); foreach ( (array) ( $data['items'] ?? array() ) as $item ) { $drug_id = (int) ( $item['drug_id'] ?? 0 ); $qty = (float) ( $item['quantity'] ?? 0 ); if ( ! $drug_id || $qty <= 0 ) { throw new \DomainException( 'Every refund item needs a drug and positive quantity.' ); } $requested[ $drug_id ] = ( $requested[ $drug_id ] ?? 0 ) + $qty; }
 			if ( ! $requested ) { throw new \DomainException( 'At least one refund item is required.' ); }
 			$by_drug = array(); foreach ( $sale_items as $item ) { $by_drug[ (int) $item['drug_id'] ] = $item; }
@@ -240,17 +283,17 @@ final class PosService {
 				$this->must_insert( 'stock_movements', $movement );
 			}
 			if ( 'restock' === $disposition ) { foreach ( $requested as $drug_id => $qty ) { if ( 1 !== $this->db->query( $this->db->prepare( "UPDATE {$this->p}stock_balances SET quantity_available=quantity_available+%f,updated_at=%s WHERE tenant_id=%d AND branch_id=%d AND drug_id=%d", $qty, current_time( 'mysql', true ), $tenant_id, $branch_id, $drug_id ) ) ) { throw new \RuntimeException( 'Stock balance restoration failed.' ); } } }
-			$pending = false; $remaining_money = $amount; $payments = $this->db->get_results( $this->db->prepare( "SELECT * FROM {$this->p}sale_payments WHERE sale_id=%d AND tenant_id=%d ORDER BY id", $sale_id, $tenant_id ), ARRAY_A ); foreach ( $payments as $payment ) { if ( $remaining_money <= 0 ) { break; } $reversed = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(rp.amount_minor),0) FROM {$this->p}refund_payments rp JOIN {$this->p}refunds r ON r.id=rp.refund_id WHERE rp.sale_payment_id=%d AND r.status IN ('completed','pending_provider','processing')", $payment['id'] ) ); $take = min( $remaining_money, (int) $payment['amount_minor'] - $reversed ); if ( $take <= 0 ) { continue; } $payment_status = 'cash' === $payment['method'] ? 'completed' : 'pending_provider'; $pending = $pending || 'pending_provider' === $payment_status; $this->must_insert( 'refund_payments', array( 'tenant_id' => $tenant_id, 'refund_id' => $refund_id, 'sale_payment_id' => $payment['id'], 'method' => $payment['method'], 'amount_minor' => $take, 'status' => $payment_status, 'external_reference' => $payment['external_reference'] ) ); $remaining_money -= $take; }
+			$pending = false; $remaining_money = $amount; $payments = $this->db->get_results( $this->db->prepare( "SELECT * FROM {$this->p}sale_payments WHERE sale_id=%d AND tenant_id=%d AND branch_id=%d ORDER BY id", $sale_id, $tenant_id, $branch_id ), ARRAY_A ); foreach ( $payments as $payment ) { if ( $remaining_money <= 0 ) { break; } $reversed = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(rp.amount_minor),0) FROM {$this->p}refund_payments rp JOIN {$this->p}refunds r ON r.id=rp.refund_id AND r.tenant_id=rp.tenant_id WHERE rp.tenant_id=%d AND rp.sale_payment_id=%d AND r.tenant_id=%d AND r.sale_id=%d AND r.status IN ('completed','pending_provider','processing')", $tenant_id, $payment['id'], $tenant_id, $sale_id ) ); $take = min( $remaining_money, (int) $payment['amount_minor'] - $reversed ); if ( $take <= 0 ) { continue; } $payment_status = 'cash' === $payment['method'] ? 'completed' : 'pending_provider'; $pending = $pending || 'pending_provider' === $payment_status; $this->must_insert( 'refund_payments', array( 'tenant_id' => $tenant_id, 'refund_id' => $refund_id, 'sale_payment_id' => $payment['id'], 'method' => $payment['method'], 'amount_minor' => $take, 'status' => $payment_status, 'external_reference' => $payment['external_reference'] ) ); $remaining_money -= $take; }
 			if ( $remaining_money > 0 ) { throw new \RuntimeException( 'Original payments cannot cover the refund.' ); }
 			$all_refunded = true; foreach ( $sale_items as $item ) { $refunded = (float) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(quantity),0) FROM {$this->p}refund_items WHERE tenant_id=%d AND sale_id=%d AND drug_id=%d", $tenant_id, $sale_id, $item['drug_id'] ) ); if ( $refunded + 0.000001 < (float) $item['quantity'] ) { $all_refunded = false; break; } }
-			$refund_status = $pending ? 'pending_provider' : 'completed'; $this->db->update( $this->p . 'refunds', array( 'status' => $refund_status ), array( 'id' => $refund_id ) ); $sale_status = 'void' === $kind ? 'voided' : ( $all_refunded ? 'refunded' : 'partially_refunded' ); $this->db->update( $this->p . 'sales', array( 'status' => $sale_status ), array( 'id' => $sale_id, 'tenant_id' => $tenant_id ) ); $this->db->query( 'COMMIT' );
+			$refund_status = $pending ? 'pending_provider' : 'completed'; $this->db->update( $this->p . 'refunds', array( 'status' => $refund_status ), array( 'id' => $refund_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id ) ); $sale_status = 'void' === $kind ? 'voided' : ( $all_refunded ? 'refunded' : 'partially_refunded' ); $this->db->update( $this->p . 'sales', array( 'status' => $sale_status ), array( 'id' => $sale_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id ) ); $this->db->query( 'COMMIT' );
 			do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $user_id, 'action' => 'void' === $kind ? 'pos.sale_voided' : 'pos.sale_refunded', 'object_type' => 'sale', 'object_id' => $sale_id, 'details' => array( 'branch_id' => $branch_id, 'refund_id' => $refund_id, 'amount_minor' => $amount, 'reason' => $reason, 'disposition' => $disposition, 'payment_status' => $refund_status ) ) );
 			return array( 'id' => $refund_id, 'sale_id' => $sale_id, 'amount_minor' => $amount, 'status' => $refund_status, 'sale_status' => $sale_status );
 		} catch ( \DomainException $error ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'refund_rejected', $error->getMessage(), array( 'status' => 409 ) ); } catch ( \Throwable $error ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'refund_failed', 'No refund, payment reversal or stock change was saved.', array( 'status' => 409 ) ); }
 	}
 
 	public function void_sale( $tenant_id, $branch_id, $sale_id, $user_id, $reason, $correlation_id ) {
-		$items = $this->db->get_results( $this->db->prepare( "SELECT drug_id,quantity FROM {$this->p}sale_items WHERE sale_id=%d AND tenant_id=%d", $sale_id, $tenant_id ), ARRAY_A );
+		$items = $this->db->get_results( $this->db->prepare( "SELECT drug_id,quantity FROM {$this->p}sale_items WHERE sale_id=%d AND tenant_id=%d AND branch_id=%d", $sale_id, $tenant_id, $branch_id ), ARRAY_A );
 		return $this->refund_sale( $tenant_id, $branch_id, $sale_id, $user_id, array( 'idempotency_key' => 'void-sale-' . $sale_id, 'reason' => $reason, 'disposition' => 'restock', 'items' => $items ), $correlation_id, 'void' );
 	}
 
@@ -258,9 +301,11 @@ final class PosService {
 		$table = $this->p . 'document_sequences';
 		$row = $this->db->get_row( $this->db->prepare( "SELECT id,next_value FROM {$table} WHERE tenant_id=%d AND branch_id=%d AND document_type='sale_receipt' FOR UPDATE", $tenant_id, $branch_id ), ARRAY_A );
 		if ( ! $row ) { $this->must_insert( 'document_sequences', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'document_type' => 'sale_receipt', 'next_value' => 2 ) ); $number = 1; }
-		else { $number = (int) $row['next_value']; if ( 1 !== $this->db->update( $table, array( 'next_value' => $number + 1 ), array( 'id' => (int) $row['id'] ) ) ) { throw new \RuntimeException( 'Receipt sequence could not be updated.' ); } }
+		else { $number = (int) $row['next_value']; if ( 1 !== $this->db->update( $table, array( 'next_value' => $number + 1 ), array( 'id' => (int) $row['id'], 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'document_type' => 'sale_receipt' ) ) ) { throw new \RuntimeException( 'Receipt sequence could not be updated.' ); } }
 		return sprintf( 'R%06d', $number );
 	}
 
+	private function owns_active_branch( $tenant_id, $branch_id ) { return (bool) $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}branches WHERE id=%d AND tenant_id=%d AND is_active=1", $branch_id, $tenant_id ) ); }
+	private function audit( $tenant_id, $actor_id, $action, $object_type, $object_id, array $details ) { do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $actor_id, 'action' => $action, 'object_type' => $object_type, 'object_id' => $object_id, 'status' => 'success', 'details' => $details ) ); }
 	private function must_insert( $table, array $row ) { if ( false === $this->db->insert( $this->p . $table, $row ) ) { throw new \RuntimeException( $this->db->last_error ); } }
 }

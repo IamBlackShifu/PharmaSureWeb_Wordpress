@@ -31,9 +31,12 @@ try {
 	$assert( 1 === count( $service->list_holds( $ids['tenant'], $ids['branch_main'] ) ), 'active branch hold can be retrieved' );
 	$assert( 12.0 === (float) $wpdb->get_var( $wpdb->prepare( "SELECT quantity_available FROM {$p}stock_balances WHERE id=%d", $ids['balance'] ) ), 'holding a cart does not consume stock' );
 	$assert( 'cancelled' === ( $service->cancel_hold( $ids['tenant'], $ids['branch_main'], $ids['hold'], 1 )['status'] ?? '' ), 'held sale can be cancelled without stock mutation' );
-	$payload = array( 'idempotency_key' => wp_generate_uuid4(), 'items' => array( array( 'drug_id' => $ids['drug'], 'quantity' => 4, 'unit_price_minor' => 1 ) ), 'payments' => array( array( 'method' => 'cash', 'amount_minor' => 400 ), array( 'method' => 'card', 'amount_minor' => 600, 'external_reference' => 'CARD-TEST' ) ) );
+	$resumed_hold = $service->hold_sale( $ids['tenant'], $ids['branch_main'], $ids['session'], 1, array( 'items' => array( array( 'drug_id' => $ids['drug'], 'quantity' => 4 ) ), 'notes' => 'Resume into checkout' ) ); $ids['resumed_hold'] = (int) ( $resumed_hold['id'] ?? 0 );
+	$payload = array( 'idempotency_key' => wp_generate_uuid4(), 'hold_id' => $ids['resumed_hold'], 'items' => array( array( 'drug_id' => $ids['drug'], 'quantity' => 4, 'unit_price_minor' => 1 ) ), 'payments' => array( array( 'method' => 'cash', 'amount_minor' => 400 ), array( 'method' => 'card', 'amount_minor' => 600, 'external_reference' => 'CARD-TEST' ) ) );
 	$sale = $service->checkout( $ids['tenant'], $ids['branch_main'], $ids['session'], 1, $payload, 'pos-test' ); $ids['sale'] = (int) ( $sale['id'] ?? 0 );
 	$assert( $ids['sale'] > 0 && 1000 === (int) ( $sale['total_amount_minor'] ?? 0 ), 'checkout uses authoritative catalogue price' );
+	$assert( 'completed' === $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$p}sale_holds WHERE id=%d AND tenant_id=%d", $ids['resumed_hold'], $ids['tenant'] ) ), 'resumed hold is completed atomically with checkout' );
+	$assert( 0 === count( $service->list_holds( $ids['tenant'], $ids['branch_main'] ) ), 'completed hold leaves the active queue without a duplicate cart' );
 	$assert( 'R000001' === ( $sale['receipt_number'] ?? '' ), 'branch receipt sequence starts deterministically' );
 	$assert( 1 === (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$p}sale_items WHERE sale_id=%d", $ids['sale'] ) ), 'itemized sale line is persisted' );
 	$assert( 2 === (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$p}sale_payments WHERE sale_id=%d", $ids['sale'] ) ), 'split tenders are persisted' );

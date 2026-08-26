@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: PharmaSure Reporting
- * Description: Tenant-safe operational, financial, inventory and claims reports with CSV exports.
- * Version: 1.0.0
+ * Description: Tenant-safe operational, clinical, financial, security and scheduled reporting with CSV, XLSX and PDF exports.
+ * Version: 1.1.0
  * Requires at least: 6.4
  * Requires PHP: 8.2
  * Requires Plugins: pharmasure-core
@@ -11,7 +11,7 @@
 namespace PharmaSure\Reporting;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DB_VERSION = '1';
 
 spl_autoload_register( static function ( $class ) {

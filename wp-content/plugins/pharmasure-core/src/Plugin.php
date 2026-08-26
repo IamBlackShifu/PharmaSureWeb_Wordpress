@@ -91,6 +91,20 @@ class Plugin {
         foreach ( $capabilities as $cap => $label ) {
             $admin->add_cap( $cap );
         }
+
+		$role_caps = [
+			'pharmasure_owner' => array_keys( $capabilities ),
+			'pharmasure_manager' => array_keys( $capabilities ),
+			'pharmasure_pharmacist' => [ 'pharmasure_view_inventory','pharmasure_view_patients','pharmasure_manage_patients','pharmasure_view_prescriptions','pharmasure_manage_prescriptions','pharmasure_review_prescriptions','pharmasure_dispense_medications','pharmasure_print_documents','pharmasure_manage_claims','pharmasure_prepare_claims','pharmasure_submit_claims','pharmasure_view_reports' ],
+			'pharmasure_cashier' => [ 'pharmasure_view_inventory','pharmasure_access_pos','pharmasure_manage_tills','pharmasure_print_documents' ],
+			'pharmasure_inventory_clerk' => [ 'pharmasure_view_inventory','pharmasure_manage_inventory','pharmasure_manage_stock','pharmasure_view_reports','pharmasure_export_data' ],
+			'pharmasure_auditor' => [ 'pharmasure_view_inventory','pharmasure_view_reports','pharmasure_export_data','pharmasure_view_audit_log' ],
+		];
+		foreach ( $role_caps as $role_name => $caps ) {
+			$role = get_role( $role_name );
+			if ( ! $role ) { add_role( $role_name, ucwords( str_replace( array( 'pharmasure_', '_' ), array( '', ' ' ), $role_name ) ), array( 'read' => true ) ); $role = get_role( $role_name ); }
+			if ( $role ) { $role->add_cap( 'read' ); foreach ( $caps as $cap ) { $role->add_cap( $cap ); } }
+		}
     }
 
     /**

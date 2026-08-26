@@ -61,12 +61,18 @@ final class Installer {
 				KEY supplier_id (supplier_id)
 			) $c",
 			"CREATE TABLE {$p}stock_receipt_lines (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+				tenant_id BIGINT UNSIGNED NOT NULL,
 				receipt_id BIGINT UNSIGNED NOT NULL,
-				drug_id BIGINT UNSIGNED NOT NULL, batch_number VARCHAR(100) NOT NULL,
-				quantity DECIMAL(18,3) NOT NULL, unit_cost_minor BIGINT NOT NULL,
-				selling_price_minor BIGINT NOT NULL DEFAULT 0, manufacture_date DATE NULL, expiry_date DATE NOT NULL,
-				status VARCHAR(20) NOT NULL DEFAULT 'completed', created_at DATETIME NOT NULL,
+				drug_id BIGINT UNSIGNED NOT NULL,
+				batch_number VARCHAR(100) NOT NULL,
+				quantity DECIMAL(18,3) NOT NULL,
+				unit_cost_minor BIGINT NOT NULL,
+				selling_price_minor BIGINT NOT NULL DEFAULT 0,
+				manufacture_date DATE NULL,
+				expiry_date DATE NOT NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed',
+				created_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				KEY tenant_receipt (tenant_id,receipt_id),
 				KEY tenant_drug (tenant_id,drug_id),
@@ -157,12 +163,18 @@ final class Installer {
 				KEY tenant_status (tenant_id,status)
 			) $c",
 			"CREATE TABLE {$p}stock_transfer_lines (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
-				transfer_id BIGINT UNSIGNED NOT NULL, drug_id BIGINT UNSIGNED NOT NULL,
-				source_batch_id BIGINT UNSIGNED NOT NULL, destination_batch_id BIGINT UNSIGNED NOT NULL,
-				quantity DECIMAL(18,3) NOT NULL, unit_cost_minor BIGINT NOT NULL DEFAULT 0,
-				selling_price_minor BIGINT NOT NULL DEFAULT 0, batch_number VARCHAR(100) NOT NULL,
-				expiry_date DATE NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'completed',
+				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+				tenant_id BIGINT UNSIGNED NOT NULL,
+				transfer_id BIGINT UNSIGNED NOT NULL,
+				drug_id BIGINT UNSIGNED NOT NULL,
+				source_batch_id BIGINT UNSIGNED NOT NULL,
+				destination_batch_id BIGINT UNSIGNED NOT NULL,
+				quantity DECIMAL(18,3) NOT NULL,
+				unit_cost_minor BIGINT NOT NULL DEFAULT 0,
+				selling_price_minor BIGINT NOT NULL DEFAULT 0,
+				batch_number VARCHAR(100) NOT NULL,
+				expiry_date DATE NOT NULL,
+				status VARCHAR(20) NOT NULL DEFAULT 'completed',
 				created_at DATETIME NOT NULL,
 				PRIMARY KEY  (id),
 				KEY tenant_transfer (tenant_id,transfer_id),
@@ -188,9 +200,29 @@ final class Installer {
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
+		// dbDelta cannot reliably add new NOT NULL columns to populated legacy
+		// tables. Stage the receipt-line tenant upgrade explicitly and idempotently.
+		$line_table = $p . 'stock_receipt_lines';
+		$line_columns = $wpdb->get_col( "SHOW COLUMNS FROM {$line_table}", 0 );
+		if ( ! in_array( 'tenant_id', $line_columns, true ) ) {
+			$wpdb->query( "ALTER TABLE {$line_table} ADD tenant_id BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER id" );
+		}
+		if ( ! in_array( 'status', $line_columns, true ) ) {
+			$wpdb->query( "ALTER TABLE {$line_table} ADD status VARCHAR(20) NOT NULL DEFAULT 'completed' AFTER expiry_date" );
+		}
+		if ( ! in_array( 'created_at', $line_columns, true ) ) {
+			$wpdb->query( "ALTER TABLE {$line_table} ADD created_at DATETIME NULL AFTER status" );
+		}
 		// Legacy receipt lines pre-date direct tenant scoping. Backfill them from
 		// their immutable parent before any tenant-scoped line query is used.
-		$wpdb->query( "UPDATE {$p}stock_receipt_lines l JOIN {$p}stock_receipts r ON r.id=l.receipt_id SET l.tenant_id=r.tenant_id,l.created_at=r.created_at WHERE l.tenant_id=0" );
+		$wpdb->query( "UPDATE {$line_table} l JOIN {$p}stock_receipts r ON r.id=l.receipt_id SET l.tenant_id=r.tenant_id,l.created_at=COALESCE(l.created_at,r.created_at) WHERE l.tenant_id=0 OR l.created_at IS NULL" );
+		$wpdb->query( "ALTER TABLE {$line_table} MODIFY tenant_id BIGINT UNSIGNED NOT NULL, MODIFY created_at DATETIME NOT NULL" );
+		$line_indexes = $wpdb->get_col( "SHOW INDEX FROM {$line_table}", 2 );
+		foreach ( array( 'tenant_receipt' => '(tenant_id,receipt_id)', 'tenant_drug' => '(tenant_id,drug_id)', 'tenant_created' => '(tenant_id,created_at)', 'tenant_status' => '(tenant_id,status)' ) as $index => $columns ) {
+			if ( ! in_array( $index, $line_indexes, true ) ) {
+				$wpdb->query( "ALTER TABLE {$line_table} ADD KEY {$index} {$columns}" );
+			}
+		}
 		// Conservative legacy backfill: receipt-line costs are immutable and
 		// therefore safe to restore. Ambiguous historical sale costs stay NULL.
 		$wpdb->query( "UPDATE {$p}stock_movements m JOIN {$p}stock_receipt_lines l ON l.tenant_id=m.tenant_id AND m.reference_type='stock_receipt' AND l.receipt_id=m.reference_id AND l.drug_id=m.drug_id JOIN {$p}batches b ON b.tenant_id=m.tenant_id AND b.id=m.batch_id AND b.batch_number=l.batch_number SET m.unit_cost_minor=l.unit_cost_minor WHERE m.unit_cost_minor IS NULL AND m.movement_type='receipt'" );
