@@ -41,7 +41,7 @@ try {
 	$ids['drug'] = (int) $wpdb->insert_id;
 	$wpdb->insert( $p . 'stock_receipts', array( 'tenant_id' => $ids['tenant_alpha'], 'branch_id' => $ids['branch_alpha'], 'supplier_id' => $ids['supplier'], 'purchase_reference' => 'PO-PRINT', 'received_date' => gmdate( 'Y-m-d' ), 'status' => 'completed', 'created_at' => current_time( 'mysql', true ), 'created_by' => 1 ) );
 	$ids['stock_receipt'] = (int) $wpdb->insert_id;
-	$wpdb->insert( $p . 'stock_receipt_lines', array( 'receipt_id' => $ids['stock_receipt'], 'drug_id' => $ids['drug'], 'batch_number' => 'PRINT-BATCH', 'quantity' => 20, 'unit_cost_minor' => 50, 'selling_price_minor' => 100, 'expiry_date' => gmdate( 'Y-m-d', strtotime( '+1 year' ) ) ) );
+	$wpdb->insert( $p . 'stock_receipt_lines', array( 'tenant_id' => $ids['tenant_alpha'], 'receipt_id' => $ids['stock_receipt'], 'drug_id' => $ids['drug'], 'batch_number' => 'PRINT-BATCH', 'quantity' => 20, 'unit_cost_minor' => 50, 'selling_price_minor' => 100, 'expiry_date' => gmdate( 'Y-m-d', strtotime( '+1 year' ) ), 'status' => 'completed', 'created_at' => current_time( 'mysql', true ) ) );
 	$ids['stock_line'] = (int) $wpdb->insert_id;
 
 	$service = new PrintService();
@@ -53,6 +53,7 @@ try {
 		$html = $service->render_job( $ids['tenant_alpha'], $job['id'] );
 		$assert( is_string( $html ) && str_contains( $html, '<!doctype html>' ), "{$type} renders printable HTML" );
 		$assert( 'completed' === $service->get_job( $ids['tenant_alpha'], $job['id'] )['status'], "{$type} job completes" );
+		if ( 'stock_receipt' === $type ) { $assert( str_contains( $html, 'Amoxicillin' ) && str_contains( $html, 'PRINT-BATCH' ), 'stock receipt renders its tenant-scoped medicine and batch line' ); }
 		if ( 'sale_receipt' === $type ) {
 			$assert( str_contains( $html, 'document-sale_receipt' ) && str_contains( $html, 'size:80mm auto' ), 'sale receipt uses a dedicated 80 mm thermal document' );
 			$assert( str_contains( $html, 'Amoxicillin 500mg' ) && str_contains( $html, 'USD 12.50' ), 'sale receipt renders item and authoritative currency totals' );

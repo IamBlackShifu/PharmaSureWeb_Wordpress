@@ -139,7 +139,7 @@ foreach ( $fixtures as $fixture ) {
 		$wpdb->insert( $prefix . 'licences', array( 'tenant_id' => $tenant_id, 'plan_id' => $plan_id, 'status' => 'active', 'licence_key' => 'DEMO-' . strtoupper( $fixture['slug'] ) . '-' . wp_generate_password( 12, false, false ), 'activated_at' => $now, 'expires_at' => gmdate( 'Y-m-d H:i:s', strtotime( '+5 years' ) ), 'grace_period_days' => 7 ) );
 		$licence_id = (int) $wpdb->insert_id;
 	}
-	foreach ( array( 'inventory', 'pos', 'clinical', 'claims', 'reporting', 'accounts' ) as $entitlement_key ) {
+	foreach ( array( 'inventory', 'pos', 'clinical', 'claims', 'reporting', 'accounts', 'offline' ) as $entitlement_key ) {
 		$entitlement_id = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$prefix}licence_entitlements WHERE licence_id=%d AND entitlement_key=%s", $licence_id, $entitlement_key ) );
 		if ( ! $entitlement_id ) {
 			$wpdb->insert( $prefix . 'licence_entitlements', array( 'licence_id' => $licence_id, 'entitlement_key' => $entitlement_key, 'is_active' => 1 ) );
@@ -147,7 +147,7 @@ foreach ( $fixtures as $fixture ) {
 			$wpdb->update( $prefix . 'licence_entitlements', array( 'is_active' => 1 ), array( 'id' => $entitlement_id, 'licence_id' => $licence_id ) );
 		}
 	}
-	foreach ( array( 'inventory_writes_monthly' => 10000, 'pos_writes_monthly' => 20000, 'clinical_writes_monthly' => 10000, 'claims_writes_monthly' => 10000, 'report_schedules' => 25, 'tenant_user_seats' => 25 ) as $quota_key => $quota_limit ) {
+	foreach ( array( 'inventory_writes_monthly' => 10000, 'pos_writes_monthly' => 20000, 'clinical_writes_monthly' => 10000, 'claims_writes_monthly' => 10000, 'report_schedules' => 25, 'tenant_user_seats' => 25, 'offline_devices' => 25, 'offline_mutations_monthly' => 50000 ) as $quota_key => $quota_limit ) {
 		$write_quota = (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$prefix}licence_quotas WHERE licence_id=%d AND quota_key=%s", $licence_id, $quota_key ) );
 		if ( ! $write_quota ) {
 			$wpdb->insert( $prefix . 'licence_quotas', array( 'licence_id' => $licence_id, 'quota_key' => $quota_key, 'limit_value' => $quota_limit ) );

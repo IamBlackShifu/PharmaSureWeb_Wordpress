@@ -1,0 +1,15 @@
+PharmaSure production-readiness environment
+Captured: 2026-08-26T18:03:14.2097038+02:00
+PHP: 8.2.32
+WordPress: 7.1
+Database: mysql  Ver 8.0.46 for Linux on x86_64 (MySQL Community Server - GPL)
+Test suites: 31/31 passed
+Assertions: 550 passed / 0 failed
+WordPress debug log after gate: 0 bytes
+Docker services:
+- wordpress: Up 2 days (healthy) / healthy
+- db: Up 2 days (healthy) / healthy
+- mailhog: Up 2 days (healthy) / healthy
+- nginx: Up 2 days (healthy) / healthy
+- phpmyadmin: Up 2 days (healthy) / healthy
+- redis: Up 2 days (healthy) / healthy

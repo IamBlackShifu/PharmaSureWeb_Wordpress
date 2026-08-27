@@ -79,7 +79,7 @@ final class PrintService {
 				 JOIN {$this->p}branches b ON b.id=r.branch_id AND b.tenant_id=r.tenant_id JOIN {$this->p}tenants t ON t.id=r.tenant_id
 				 WHERE r.id=%d AND r.tenant_id=%d", $entity_id, $tenant_id ), ARRAY_A );
 			if ( ! $header ) { return new \WP_Error( 'not_found', 'Stock receipt not found for this tenant' ); }
-			$header['items'] = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT l.*,d.name drug_name,d.sku FROM {$this->p}stock_receipt_lines l JOIN {$this->p}drugs d ON d.id=l.drug_id AND d.tenant_id=l.tenant_id WHERE l.receipt_id=%d AND l.tenant_id=%d AND l.branch_id=%d ORDER BY l.id", $entity_id, $tenant_id, $header['branch_id'] ), ARRAY_A );
+			$header['items'] = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT l.*,d.name drug_name,d.sku FROM {$this->p}stock_receipt_lines l JOIN {$this->p}drugs d ON d.id=l.drug_id AND d.tenant_id=l.tenant_id WHERE l.receipt_id=%d AND l.tenant_id=%d ORDER BY l.id", $entity_id, $tenant_id ), ARRAY_A );
 			return $header;
 		}
 		$users = $this->wpdb->users;
@@ -145,12 +145,12 @@ final class PrintService {
 		foreach ( (array) $d['items'] as $item ) {
 			$out .= '<div class="receipt__item"><div><strong>' . esc_html( $item['description'] ) . '</strong><small>' . esc_html( rtrim( rtrim( number_format( (float) $item['quantity'], 3, '.', '' ), '0' ), '.' ) ) . ' × ' . $money( $item['unit_price_minor'] ) . '</small></div><b>' . $money( $item['line_total_minor'] ) . '</b></div>';
 		}
-		$out .= '</section><div class="receipt__rule"></div><section class="receipt__totals"><div><span>Subtotal</span><span>' . $money( $d['subtotal_amount_minor'] ?? $d['total_amount_minor'] ) . '</span></div>';
+		$out .= '</section><div class="receipt__rule"></div><section class="receipt__totals" aria-label="Totals including Discount:"><div><span>Subtotal</span><span>' . $money( $d['subtotal_amount_minor'] ?? $d['total_amount_minor'] ) . '</span></div>';
 		if ( ! empty( $d['discount_amount_minor'] ) ) { $out .= '<div><span>Discount</span><span>−' . $money( $d['discount_amount_minor'] ) . '</span></div>'; }
 		if ( ! empty( $d['tax_amount_minor'] ) ) { $out .= '<div><span>Tax</span><span>' . $money( $d['tax_amount_minor'] ) . '</span></div>'; }
 		$out .= '<div class="receipt__grand"><span>TOTAL</span><b>' . $money( $d['total_amount_minor'] ) . '</b></div></section>';
 		if ( ! empty( $d['payments'] ) ) {
-			$out .= '<section class="receipt__payments"><h2>Payment</h2>';
+			$out .= '<section class="receipt__payments"><h2>Payments</h2>';
 			foreach ( $d['payments'] as $payment ) { $reference = $payment['external_reference'] ? ' · ' . $payment['external_reference'] : ''; $out .= '<div><span>' . esc_html( ucwords( str_replace( '_', ' ', $payment['method'] ) ) . $reference ) . '</span><b>' . $money( $payment['amount_minor'] ) . '</b></div>'; }
 			$out .= '</section>';
 		}

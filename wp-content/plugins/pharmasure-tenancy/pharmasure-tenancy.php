@@ -8,7 +8,7 @@
  * Plugin Name: PharmaSure Tenancy
  * Plugin URI: https://pharmasure.example.com
  * Description: Manages tenant and branch lifecycle, onboarding, context switching and isolation
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires PHP: 8.2
  * Requires Plugins: pharmasure-core
  * Text Domain: pharmasure-tenancy
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const TABLE_PREFIX = 'ps_';
 
 // Auto-load classes

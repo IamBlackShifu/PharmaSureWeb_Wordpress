@@ -17,6 +17,9 @@ class TenantService {
 	 * Create a new tenant (onboarding workflow)
 	 */
 	public function create_tenant( array $data ) {
+		if ( is_multisite() && current_user_can( 'manage_network_options' ) ) {
+			return ( new TenantProvisioningService() )->create( $data );
+		}
 		$required = [ 'legal_name', 'trading_name', 'slug', 'owner_email', 'country', 'currency' ];
 		$missing  = array_values( array_filter( $required, fn( $field ) => empty( $data[ $field ] ) ) );
 

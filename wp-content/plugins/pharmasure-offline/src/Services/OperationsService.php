@@ -29,6 +29,11 @@ final class OperationsService {
 		return $this->db->get_results($this->db->prepare($sql,...$args),ARRAY_A);
 	}
 
+	public function device($tenant,$id){
+		$row=$this->db->get_row($this->db->prepare("SELECT id,branch_id,user_id,client_id,device_name,secret_fingerprint,status,last_seen_at,expires_at,revoked_at,created_at FROM {$this->p}offline_devices WHERE tenant_id=%d AND id=%d",absint($tenant),absint($id)),ARRAY_A);
+		return $row?:new \WP_Error('device_not_found','Device not found.',array('status'=>404));
+	}
+
 	public function monitor($tenant,$branch=0){
 		$where='tenant_id=%d';$args=array(absint($tenant));if($branch){$where.=' AND branch_id=%d';$args[]=absint($branch);}
 		$rows=$this->db->get_results($this->db->prepare("SELECT status,COUNT(*) total,MIN(received_at) oldest FROM {$this->p}offline_mutations WHERE $where GROUP BY status",...$args),ARRAY_A);
@@ -58,6 +63,16 @@ final class OperationsService {
 	public function replay($tenant,$id,$actor){
 		$m=$this->mutation($tenant,$id);if(is_wp_error($m)){return $m;}if(!in_array($m['status'],array('retry','requires_online_replay'),true)){return new \WP_Error('mutation_not_replayable','Only queued or retrying mutations may be replayed.',array('status'=>409));}
 		$result=(new ReplayService())->replay(absint($id));$outcome=is_wp_error($result)?$result->get_error_code():($result['status']??'unknown');$this->audit($tenant,$actor,'offline.mutation_replay_requested',$id,$m,'Outcome: '.sanitize_key($outcome));return $result;
+	}
+
+	public function resolve_alert($tenant,$id,$actor){
+		$alert=$this->db->get_row($this->db->prepare("SELECT id,event_type,severity,is_resolved FROM {$this->p}security_events WHERE tenant_id=%d AND id=%d AND event_type IN ('offline_device_auth_failed','offline_signature_failure','offline_replay_attempt','offline_replay_failure')",absint($tenant),absint($id)),ARRAY_A);
+		if(!$alert){return new \WP_Error('security_alert_not_found','Security alert not found.',array('status'=>404));}
+		if((int)$alert['is_resolved']){return array('id'=>absint($id),'is_resolved'=>true);}
+		$ok=$this->db->update($this->p.'security_events',array('is_resolved'=>1),array('id'=>absint($id),'tenant_id'=>absint($tenant),'is_resolved'=>0));
+		if(1!==$ok){return new \WP_Error('security_alert_changed','Security alert state changed; refresh before acting.',array('status'=>409));}
+		do_action('pharmasure_audit_log',array('tenant_id'=>absint($tenant),'actor_id'=>absint($actor),'action'=>'offline.security_alert_resolved','object_type'=>'security_event','object_id'=>absint($id),'details'=>array('event_type'=>$alert['event_type'],'severity'=>$alert['severity'])));
+		return array('id'=>absint($id),'is_resolved'=>true);
 	}
 
 	private function audit($tenant,$actor,$action,$id,$m,$reason){do_action('pharmasure_audit_log',array('tenant_id'=>absint($tenant),'actor_id'=>absint($actor),'action'=>$action,'object_type'=>'offline_mutation','object_id'=>absint($id),'details'=>array('branch_id'=>$m['branch_id'],'mutation_type'=>$m['mutation_type'],'reason'=>$reason)));}

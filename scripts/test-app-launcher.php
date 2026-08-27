@@ -38,6 +38,7 @@ $assert( str_contains( $css, '--ps-mono:' ) && str_contains( $css, 'prefers-redu
 $assert( ! str_contains( $js, 'innerHTML' ) && str_contains( $js, 'textContent' ) && str_contains( $js, 'replaceChildren' ), 'client data renders through safe DOM APIs' );
 $assert( str_contains( $js, "event.key.toLowerCase() === 'k'" ) && str_contains( $js, 'showModal()' ), 'Ctrl+K command launcher is keyboard accessible' );
 $assert( str_contains( $js, 'ps-theme-toggle' ) && str_contains( $js, "api('app/preferences/theme'" ), 'theme control persists through the authenticated preference API' );
+$assert( str_contains( $launcher, "html_entity_decode( wp_logout_url" ) && str_contains( $js, 'ps-logout' ) && str_contains( $css, '.ps-logout' ), 'persistent logout uses a browser-safe nonce URL and warns before abandoning an active sale' );
 $assert( (int) $context->get_tenant_id() > 0 && (int) $context->get_branch_id() > 0, 'authenticated tenant and branch scope resolve server-side' );
 
 $overview = AppLauncher::overview();

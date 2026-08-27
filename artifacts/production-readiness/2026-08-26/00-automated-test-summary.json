@@ -1,0 +1,196 @@
+{
+    "started_at":  "2026-08-26T18:01:25.6176150+02:00",
+    "finished_at":  "2026-08-26T18:02:25.7478652+02:00",
+    "duration_seconds":  60.13,
+    "total_suites":  31,
+    "passed_suites":  31,
+    "failed_suites":  0,
+    "results":  [
+                    {
+                        "suite":  "test-accessibility-hardening.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-admin-pages.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-application-shell.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-architecture-guardrails.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-audit.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-branch-access.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-demo-tenant-users.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-integrations.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-tenancy.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-isolation.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-license.php",
+                        "context":  "http://localhost:8080",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-app-launcher.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-branch-session-context.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-claims.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-clinical.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-claims.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-clinical.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-inventory.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-offline.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-pos.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-headless-reports-accounts.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-inventory.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-inventory-commands.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-inventory-workspace.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-offline.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-offline-operations.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-offline-replay.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-pos.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-print.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-reporting.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    },
+                    {
+                        "suite":  "test-runtime-schema.php",
+                        "context":  "http://localhost:8080/greenlife-pharmacy",
+                        "passed":  true,
+                        "exit_code":  0
+                    }
+                ]
+}

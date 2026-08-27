@@ -267,6 +267,7 @@ final class AppLauncher {
 			'apiUrl'      => trailingslashit( rest_url( 'pharmasure/v1' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'appUrl'      => untrailingslashit( network_home_url( '/app' ) ),
+			'logoutUrl'   => html_entity_decode( wp_logout_url( network_home_url( '/wp-login.php?logged_out=true' ) ), ENT_QUOTES, 'UTF-8' ),
 			'route'       => $route_path,
 			'theme'       => $theme,
 			'activeBranch'=> $branch_id,

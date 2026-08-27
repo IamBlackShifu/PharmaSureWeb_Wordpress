@@ -1,0 +1,652 @@
+PharmaSure production-readiness regression
+Started: 2026-08-26T18:01:25.6176150+02:00
+
+
+===== test-accessibility-hardening.php | http://localhost:8080 =====
+PASS: keyboard focus is visibly styled
+PASS: interactive targets meet the WCAG minimum target size
+PASS: reduced-motion preferences are honored
+PASS: unlabelled legacy controls receive accessible fallback names
+PASS: data-table column headers receive explicit scope
+PASS: POS does not interpolate API data into HTML
+PASS: POS renders dynamic content through safe DOM APIs
+PASS: POS dynamic controls have names and native keyboard activation
+PASS: POS exposes errors and asynchronous state
+PASS: reports expose table context and header relationships
+PASS: offline operations expose active navigation and filter purpose
+PASS: central REST rate limiter autoloads
+PASS: rate limiting is registered before REST dispatch
+PASS: oversized PharmaSure REST writes are rejected
+PASS: REST responses receive no-store and MIME-sniffing protections
+Accessibility and hardening tests: 15 passed, 0 failed.
+
+===== test-admin-pages.php | http://localhost:8080 =====
+PASS: administrator can access PharmaSure parent menu
+PASS: administrator can view prescriptions
+PASS: Clinical submenu is registered under PharmaSure
+REGISTERED_PAGE: pharmasure_page_pharmasure-clinical
+PASS: Clinical page callback is registered with WordPress
+PASS: Clinical page is attached to the PharmaSure parent hook
+PASS: administrator can print documents
+PASS: Printing submenu is registered under PharmaSure
+Admin menu tests: 7 passed, 0 failed.
+
+===== test-application-shell.php | http://localhost:8080 =====
+PASS: shared application shell class autoloads
+PASS: PharmaSure admin pages activate the shared shell
+PASS: shell adds a scoped admin body class
+PASS: accessible shell stylesheet is enqueued
+PASS: responsive enhancement script is enqueued
+PASS: visible keyboard focus styling is present
+PASS: reduced-motion preference is respected
+PASS: operational print styles are present
+PASS: tables gain responsive accessible labels
+PASS: notices are announced through the live region
+PASS: unrelated WordPress admin pages are not restyled
+Application shell tests: 11 passed, 0 failed.
+
+===== test-architecture-guardrails.php | http://localhost:8080 =====
+PASS: first-party PharmaSure PHP files are discovered
+PASS: core pharmacy data does not register custom post types
+PASS: tenant scope is not read from client request parameters or superglobals
+PASS: first-party REST route registrations are present
+PASS: REST route registrations include permission callbacks
+PASS: explicit offline licence tokens use fail-closed validation
+PASS: canonical entitlement enforcement is available
+Architecture guardrails: 7 passed, 0 failed.
+
+===== test-audit.php | http://localhost:8080 =====
+PASS: shared hook persists an audit event
+PASS: event type is normalized consistently
+PASS: action is derived from the event type
+PASS: legacy object keys map to canonical entity columns
+PASS: non-sensitive audit detail is retained
+PASS: password is redacted
+PASS: nested secrets are redacted
+Audit tests: 7 passed, 0 failed.
+
+===== test-branch-access.php | http://localhost:8080 =====
+PASS: active membership grants tenant access
+PASS: another tenant is denied
+PASS: explicit branch assignment grants access
+PASS: unassigned branch in the same tenant is denied
+PASS: branch in another tenant is denied
+PASS: inactive branch is denied
+PASS: unauthorized branch cannot become active context
+PASS: authorized branch becomes active context
+Branch authorization tests: 8 passed, 0 failed.
+
+===== test-demo-tenant-users.php | http://localhost:8080 =====
+PASS: owner@greenlife.demo exists
+PASS: owner@greenlife.demo belongs to its tenant site
+PASS: owner@greenlife.demo cannot access the other tenant site
+PASS: owner@greenlife.demo has exactly one site assignment
+PASS: owner@greenlife.demo has the correct primary site
+PASS: owner@greenlife.demo has one active owner membership
+PASS: owner@sunrise.demo exists
+PASS: owner@sunrise.demo belongs to its tenant site
+PASS: owner@sunrise.demo cannot access the other tenant site
+PASS: owner@sunrise.demo has exactly one site assignment
+PASS: owner@sunrise.demo has the correct primary site
+PASS: owner@sunrise.demo has one active owner membership
+Demo tenant user isolation: 12 passed, 0 failed.
+
+===== test-integrations.php | http://localhost:8080 =====
+PASS: integration_configs table exists
+PASS: integration_deliveries table exists
+PASS: integration_callbacks table exists
+PASS: credentials are encrypted at rest
+PASS: encrypted credentials decrypt with the installation key
+PASS: uninstalled payment provider cannot be presented as integrated
+PASS: signed webhook configuration is created
+PASS: stored configuration never contains plaintext secrets
+PASS: outbound event is queued
+PASS: delivery enqueue is idempotent
+PASS: valid signed callback is processed
+PASS: provider callback replay is idempotent
+PASS: invalid callback signature is rejected
+PASS: stale callback is rejected
+Integration tests: 14 passed, 0 failed.
+
+===== test-tenancy.php | http://localhost:8080 =====
+PASS: incomplete tenant onboarding fails closed
+PASS: super administrator can provision a complete isolated pharmacy
+PASS: provisioning returns tenant, site and owner identities
+PASS: new tenant receives the defined enterprise trial
+PASS: one-time owner credential is valid
+PASS: network tenant directory stores the pharmacy identity and trial posture
+PASS: default operational branch is created
+PASS: owner receives tenant-bound all-branch authority
+PASS: tenant-to-site mapping resolves to a live multisite site
+PASS: tenant licence record is active as a trial
+PASS: enterprise trial includes operational entitlements and quotas
+PASS: owner belongs only to the newly provisioned pharmacy site
+PASS: owner primary site is the isolated tenant site
+PASS: tenant identity and owner membership are mirrored into the site schema
+PASS: inventory, POS, clinical, claims, reporting and offline schemas are installed
+PASS: owner has the application role and workspace capability
+PASS: an owner identity cannot be reused across pharmacy tenants
+PASS: duplicate tenant URL slugs are rejected before mutation
+Tenant provisioning tests: 18 passed, 0 failed.
+
+===== test-isolation.php | http://localhost:8080 =====
+PharmaSure tenant isolation integration tests
+PASS: TenantContext is a singleton
+PASS: tenants table exists
+PASS: branches table exists
+PASS: tenant_memberships table exists
+PASS: licences table exists
+PASS: audit_events table exists
+PASS: two isolated tenant fixtures are created
+PASS: tenant context allows its own branch
+PASS: tenant context rejects another tenant branch
+PASS: rejected branch cannot replace the active branch context
+PASS: LicenseManager accepts the scoped tenant ID
+PASS: WordPress Multisite is active
+Tenant isolation tests: 12 passed, 0 failed.
+
+===== test-license.php | http://localhost:8080 =====
+PharmaSure licensing integration tests
+PASS: licences table exists
+PASS: licence_entitlements table exists
+PASS: licence_quotas table exists
+PASS: licence_signing_keys table exists
+PASS: token_revocation_list table exists
+PASS: RSA signing key can be generated
+PASS: generated public key is valid PEM
+PASS: licensing fixtures are created
+PASS: database licence validation succeeds
+PASS: entitlement is loaded from the migrated schema
+PASS: quota is loaded from the migrated schema
+PASS: RS256 offline token is issued
+PASS: offline token signature and claims validate
+PASS: an explicitly supplied token with a bad signature fails closed
+PASS: entitlement enforcement permits a licensed feature
+PASS: entitlement enforcement fails closed for an unavailable feature
+PASS: offline token cannot authorize another tenant
+PASS: licensing plugin reads entitlements using the shared schema
+PASS: licensing plugin reads quota and usage using the shared schema
+Licensing tests: 19 passed, 0 failed.
+
+===== test-app-launcher.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: seeded tenant owner is available
+PASS: standalone application launcher autoloads
+PASS: /app and nested routes are registered while the protected print namespace remains reserved
+PASS: authentication and pharmacy-staff redirect guards are present
+PASS: headless overview REST route is registered
+PASS: standalone template has no WordPress presentation hooks
+PASS: template exposes config and only dedicated application assets
+PASS: saved theme is applied before the stylesheet to prevent a color flash
+PASS: crisp obsidian and medical emerald tokens are canonical
+PASS: light theme has an explicit clinical token set
+PASS: data typography and accessibility states are defined
+PASS: client data renders through safe DOM APIs
+PASS: Ctrl+K command launcher is keyboard accessible
+PASS: theme control persists through the authenticated preference API
+PASS: persistent logout uses a browser-safe nonce URL and warns before abandoning an active sale
+PASS: authenticated tenant and branch scope resolve server-side
+PASS: overview API returns scoped dashboard data
+PASS: overview response does not expose or accept tenant identifiers
+PASS: invalid branch selection fails closed
+PASS: theme preference is persisted for the authenticated user
+PASS: unsupported themes fail closed
+App launcher tests: 21 passed, 0 failed.
+
+===== test-branch-session-context.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: GreenLife exposes two active branches for simultaneous-browser verification
+PASS: owner receives the authorized default branch without a prompt
+PASS: Browser A can select the second owner-authorized branch
+PASS: new Browser B starts independently in the default branch
+PASS: Browser A retains its second-branch selection independently
+PASS: Browser B remains on its own default-branch selection
+PASS: branch preferences are stored as two session-and-tenant scoped entries
+Branch session-context tests: 7 passed, 0 failed.
+
+===== test-claims.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: insurers table exists
+PASS: insurer_schemes table exists
+PASS: patient_covers table exists
+PASS: claims table exists
+PASS: claim_items table exists
+PASS: claim_events table exists
+PASS: remittances table exists
+PASS: remittance_items table exists
+PASS: insurer is tenant-scoped and created
+PASS: insurer scheme is created
+PASS: patient cover and authorization are recorded
+PASS: itemized claim is prepared from the covered sale
+PASS: claim preparation is idempotent
+PASS: cover and authorization validation passes
+PASS: manual adapter creates an explicit submission handoff
+PASS: claim cannot be marked submitted without payer evidence
+PASS: payer reference records submission
+PASS: insurer approval is recorded
+PASS: partial remittance reconciles without closing claim
+PASS: remittance retry is idempotent
+PASS: final remittance closes the approved claim
+PASS: immutable claim lifecycle events are retained
+PASS: claim form renders scoped item details
+PASS: remittance print renders reconciliation details
+Claims tests: 24 passed, 0 failed.
+
+===== test-clinical.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: patients table exists
+PASS: prescriptions table exists
+PASS: prescription_items table exists
+PASS: sales table exists
+PASS: batches table exists
+PASS: stock_balances table exists
+PASS: stock_movements table exists
+PASS: patients are created in separate tenant scopes
+PASS: tenant can search its patient
+PASS: tenant search cannot see another patient
+PASS: cross-tenant patient prescription is rejected
+PASS: draft prescription and items are created atomically
+PASS: draft submits for review
+PASS: pending prescription is approved
+PASS: another tenant cannot dispense the prescription
+PASS: approved prescription dispenses to a sale
+PASS: dispensing finalizes prescription state
+PASS: expired batch is never consumed
+PASS: stock from another branch is never consumed
+PASS: earliest-expiring eligible batch is consumed first
+PASS: remaining quantity is allocated from the next batch
+PASS: branch stock balance matches batch deductions
+PASS: immutable movements record the complete dispensed quantity
+PASS: dispensed prescription cannot be dispensed twice
+PASS: insufficient unexpired stock rejects dispensing
+PASS: failed dispensing preserves the approved prescription
+PASS: failed dispensing rolls back all stock changes
+Clinical tests: 27 passed, 0 failed.
+
+===== test-headless-claims.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: seeded tenant owner is available
+PASS: tenant and branch resolve from authenticated context
+PASS: Claims branch read model resolves
+PASS: workspace returns complete revenue-cycle posture
+PASS: workspace does not expose tenant identifiers
+PASS: seeded branch exposes a claim lifecycle fixture
+PASS: claim inspector includes item evidence and audit timeline
+PASS: claim coverage is resolved server-side
+PASS: unauthorized branch fails closed
+PASS: Claims workspace endpoint is registered
+PASS: rejection correction endpoint is registered
+PASS: browser cannot supply tenant scope
+PASS: Claims entry points enforce entitlement and write quota
+PASS: headless client mounts queue, inspector and operations panels
+PASS: correction, submission and adjudication workflows are present
+PASS: remittance and write-off controls are present
+PASS: Claims UI uses safe native DOM controls
+PASS: Claims workspace is dense, theme-aware and responsive
+Headless Claims tests: 18 passed, 0 failed.
+
+===== test-headless-clinical.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: patients table exists
+PASS: prescriptions table exists
+PASS: prescription_items table exists
+PASS: dispensing_checks table exists
+PASS: controlled_dispense_register table exists
+PASS: patient safety profile is created with a generated audit mutation
+PASS: allergies and medical conditions remain visible in patient context
+PASS: prescription stores authoritative tenant medicine identity and price
+PASS: draft enters pharmacist review queue
+PASS: approval fails closed until allergy, interaction and dose checks are complete
+PASS: completed pharmacist review approves dispensing
+PASS: dispensing fails closed without counselling evidence
+PASS: dispensing ignores client total and calculates authoritative catalogue value
+PASS: claim-ready sale item stores immutable quantity, price and exact historical cost
+PASS: counselling and dispensing checks are persisted
+PASS: FEFO dispensing updates only authorized branch stock
+PASS: dispensing retry returns the original sale without consuming stock twice
+PASS: controlled prescription cannot be approved without legal attestation
+PASS: controlled dispensing requires a distinct authorized witness
+PASS: Clinical workspace returns complete branch-scoped read model
+PASS: Clinical workspace does not expose tenant identifiers
+PASS: unauthorized branch workspace fails closed
+PASS: Clinical workspace, review and dispense REST routes are registered
+PASS: Clinical entry points enforce license entitlement
+PASS: headless client provides safe patient, review and dispensing workflows
+PASS: Clinical workspace uses responsive dark/light safety styling
+Headless Clinical tests: 26 passed, 0 failed.
+
+===== test-headless-inventory.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: seeded tenant owner is available
+PASS: tenant and branch scope resolve from authentication
+PASS: catalogue read model resolves
+PASS: catalogue contains scope, summary, rows and inspector facts
+PASS: catalogue does not expose tenant identifiers
+PASS: batches read model resolves
+PASS: batches contains scope, summary, rows and inspector facts
+PASS: batches does not expose tenant identifiers
+PASS: receipts read model resolves
+PASS: receipts contains scope, summary, rows and inspector facts
+PASS: receipts does not expose tenant identifiers
+PASS: movements read model resolves
+PASS: movements contains scope, summary, rows and inspector facts
+PASS: movements does not expose tenant identifiers
+PASS: low-stock read model resolves
+PASS: low-stock contains scope, summary, rows and inspector facts
+PASS: low-stock does not expose tenant identifiers
+PASS: expiry read model resolves
+PASS: expiry contains scope, summary, rows and inspector facts
+PASS: expiry does not expose tenant identifiers
+PASS: suppliers read model resolves
+PASS: suppliers contains scope, summary, rows and inspector facts
+PASS: suppliers does not expose tenant identifiers
+PASS: unauthorized branch scope fails closed
+PASS: service defaults unknown views to catalogue
+PASS: catalogue search remains prepared and does not alter tenant filters
+PASS: headless inventory REST endpoint is registered
+PASS: REST controller never accepts client tenant scope
+PASS: /app/inventory mounts the seven-view client workspace
+PASS: inventory rows render through safe DOM APIs
+PASS: headless inventory exposes multi-line receiving and command workflows
+PASS: batch, transfer and asynchronous completion controls are keyboard-native
+PASS: inventory command UI has dense theme-aware responsive styling
+PASS: inventory entry points enforce entitlement and plan write quotas
+Headless inventory tests: 34 passed, 0 failed.
+
+===== test-headless-offline.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: GreenLife owner fixture is available
+PASS: tenant and branch resolve from the authenticated session
+PASS: licensed tenant can register a branch-scoped offline device
+PASS: offline mutation enters the authoritative replay queue
+PASS: headless Offline workspace and guarded manager routes are registered
+PASS: licensed owner can load the complete Offline workspace
+PASS: workspace exposes no tenant identifiers or recoverable device secrets
+PASS: workspace queue includes this branch and excludes another tenant
+PASS: mutation inspector returns decoded payload without tenant or integrity internals
+PASS: another tenant mutation is indistinguishable from a missing record
+PASS: headless Offline UI includes queue actions and one-time device credentials
+PASS: Offline workspace uses the clinical design system and explicit conflict states
+Headless Offline tests: 12 passed, 0 failed.
+
+===== test-headless-pos.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: seeded tenant owner is available
+PASS: tenant and branch resolve from authenticated context
+PASS: POS branch read model resolves
+PASS: workspace contains branch scope, performance metrics and pricing policy
+PASS: workspace does not expose tenant identifiers
+PASS: seeded branch provides a till and current cashier session
+PASS: product finder receives authoritative price and branch stock
+PASS: hold queue and receipt stream are branch-scoped arrays
+PASS: unauthorized branch fails closed
+PASS: headless POS workspace endpoint is registered
+PASS: checkout, hold and refund endpoints remain registered
+PASS: REST controller never accepts tenant scope from the browser
+PASS: POS entry points enforce entitlement and monthly write quota
+PASS: checkout preserves locked session validation, FEFO consumption and transaction boundaries
+PASS: /app/pos mounts a live workspace and checkout command
+PASS: split tenders, holds, refunds and void controls are present
+PASS: receipt window opens during the user gesture and survives asynchronous print-job creation
+PASS: advertised keyboard shortcuts focus lookup and guard checkout outside dialogs
+PASS: resumed held sales complete with checkout instead of remaining as duplicate carts
+PASS: prescription-only items are explicitly routed to Clinical
+PASS: POS components render through safe DOM APIs
+PASS: POS has dense responsive styling in the shared dark/light token system
+Headless POS tests: 22 passed, 0 failed.
+
+===== test-headless-reports-accounts.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: GreenLife owner fixture is available
+PASS: tenant and branch resolve from the authenticated site context
+PASS: headless Reports workspace route is registered
+PASS: scheduled-delivery status route is registered
+PASS: tenant Account workspace, access and self-security routes are registered
+PASS: licensed owner can load the Reports workspace
+PASS: Reports workspace returns dashboard, evidence, schedules and scope
+PASS: Reports response does not expose tenant identifiers
+PASS: authenticated Reports REST export returns a valid XLSX package
+PASS: another pharmacy owner is excluded from the account directory
+PASS: tenant administrator can create a branch-restricted operational account
+PASS: membership and branch assignment are stored inside the current tenant only
+PASS: tenant account changes its temporary password inside the headless workspace
+PASS: cross-pharmacy email reuse fails closed
+PASS: headless Reports UI includes analysis, exports and scheduled delivery
+PASS: headless Accounts UI includes directory and access administration
+PASS: account service explicitly scopes memberships and blocks identity reuse
+PASS: Reports and Accounts use the clinical design system
+PASS: login presentation is PharmaSure-native and independent of WordPress admin styles
+PASS: account writes enforce the licensed feature and tenant seat quota
+PASS: scheduled delivery enforces the reporting entitlement and schedule quota
+PASS: headless Account workspace provides self-service password replacement
+Headless Reports/Accounts tests: 22 passed, 0 failed.
+
+===== test-inventory.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: same workflow creates independent tenant catalogues
+PASS: valid receipt commits atomically
+PASS: receipt updates exact stock balance
+PASS: receipt produces one immutable ledger movement
+PASS: cross-tenant supplier is rejected
+PASS: tenant search cannot see another catalogue
+PASS: expired stock receipt is rejected before transaction
+Inventory tests: 7 passed, 0 failed.
+
+===== test-inventory-commands.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: two-branch tenant scope is available
+PASS: inventory entitlement permits the licensed command layer
+PASS: enterprise demo plan carries an explicit monthly inventory write quota
+PASS: tenant supplier is created and audited
+PASS: supplier maintenance stays tenant scoped
+PASS: catalogue medicine is created
+PASS: catalogue medicine is updated without changing tenant identity
+PASS: multi-table receipt writes direct tenant scope onto every line
+PASS: adjustment atomically updates batch, balance, lines and movement ledger
+PASS: cross-tenant adjustment fails closed
+PASS: quarantine removes the batch from branch availability without destroying quantity
+PASS: release restores the preserved batch to branch availability
+PASS: FEFO inter-branch transfer creates balanced outbound and inbound stock
+PASS: unauthorized destination branch is rejected
+PASS: medicine archival is blocked while any tenant branch has stock
+PASS: supplier is soft-archived without deleting receipt history
+PASS: /pharmasure/v1/inventory/options route is registered
+PASS: /pharmasure/v1/inventory/adjustments route is registered
+PASS: /pharmasure/v1/inventory/transfers route is registered
+PASS: /pharmasure/v1/inventory/batches/(?P<id>\d+)/status route is registered
+Inventory command tests: 20 passed, 0 failed.
+
+===== test-inventory-workspace.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: seeded inventory owner is available
+PASS: tenant scope resolves from the current site
+PASS: branch scope resolves from the authenticated user
+PASS: inventory capability is enforced
+PASS: catalogue renders inside the clinical inventory shell
+PASS: catalogue renders its contextual inspector
+PASS: batches renders inside the clinical inventory shell
+PASS: batches renders its contextual inspector
+PASS: receipts renders inside the clinical inventory shell
+PASS: receipts renders its contextual inspector
+PASS: movements renders inside the clinical inventory shell
+PASS: movements renders its contextual inspector
+PASS: low-stock renders inside the clinical inventory shell
+PASS: low-stock renders its contextual inspector
+PASS: expiry renders inside the clinical inventory shell
+PASS: expiry renders its contextual inspector
+PASS: suppliers renders inside the clinical inventory shell
+PASS: suppliers renders its contextual inspector
+PASS: workspace never accepts tenant scope from the request
+PASS: tables and section navigation expose keyboard context
+Inventory workspace tests: 20 passed, 0 failed.
+
+===== test-offline.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: offline_devices table exists
+PASS: offline_nonces table exists
+PASS: offline_mutations table exists
+PASS: device returns a one-time client secret
+PASS: device secret is encrypted at rest
+PASS: valid signed device envelope authenticates in its branch
+PASS: nonce replay is rejected
+PASS: offline sale is not falsely marked applied
+PASS: identical offline mutation is deduplicated
+PASS: mutation ID reuse with changed content is a conflict
+PASS: device can be revoked
+PASS: revoked device cannot authenticate
+Offline tests: 12 passed, 0 failed.
+
+===== test-offline-operations.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: tenant device inventory is returned
+PASS: device secrets are excluded from administration results
+PASS: mutation detail decodes the stored payload
+PASS: mutation detail is tenant isolated
+PASS: discard requires a manager reason
+PASS: applied mutations cannot be discarded
+PASS: queued mutation can be safely discarded
+PASS: conflict rebase captures a fresh authoritative version
+PASS: monitor reports replay state and security alerts
+PASS: repeated signature failures escalate to critical
+PASS: security alert resolution is tenant isolated
+PASS: security alert resolution is persisted and tenant scoped
+PASS: security alerts contain no credentials or signature material
+Offline operations tests: 13 passed, 0 failed.
+
+===== test-offline-replay.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: replay device is registered
+PASS: device receives an authoritative base version
+PASS: stock receipt replays through authoritative inventory service
+PASS: authoritative replay posts stock exactly once
+PASS: applied mutation cannot replay again
+PASS: changed server state produces a conflict
+PASS: offline payment remains provider-gated
+PASS: replay revalidates membership
+Offline replay tests: 8 passed, 0 failed.
+
+===== test-pos.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: tills table exists
+PASS: till_sessions table exists
+PASS: document_sequences table exists
+PASS: sales table exists
+PASS: sale_items table exists
+PASS: sale_payments table exists
+PASS: sale_holds table exists
+PASS: refunds table exists
+PASS: refund_items table exists
+PASS: refund_payments table exists
+PASS: SKU/barcode search returns branch stock and authoritative price
+PASS: branch till is created
+PASS: cashier opens a till session with float
+PASS: a till cannot have two open sessions
+PASS: cart is held with a unique reference
+PASS: active branch hold can be retrieved
+PASS: holding a cart does not consume stock
+PASS: held sale can be cancelled without stock mutation
+PASS: checkout uses authoritative catalogue price
+PASS: resumed hold is completed atomically with checkout
+PASS: completed hold leaves the active queue without a duplicate cart
+PASS: branch receipt sequence starts deterministically
+PASS: itemized sale line is persisted
+PASS: split tenders are persisted
+PASS: POS consumes earliest-expiring branch batch first
+PASS: POS consumes remainder from next FEFO batch
+PASS: POS never consumes another branch stock
+PASS: idempotent replay returns the original sale
+PASS: idempotent replay creates no duplicate sale
+PASS: payment mismatch is rejected before stock changes
+PASS: prescription medicine is routed to clinical dispensing
+PASS: branch tax and maximum discount policy is stored
+PASS: discount requires explicit capability and reason
+PASS: discount is applied before configured tax with integer rounding
+PASS: discount reason is persisted on the sale
+PASS: receipt sequence increments without collision
+PASS: sale receipt prints item, discount, tax, total and tender detail
+PASS: partial cash refund uses proportional original discount and tax
+PASS: refund line snapshots exact original batch cost
+PASS: return movement carries original immutable unit cost
+PASS: partial refund updates sale lifecycle state
+PASS: sellable return restores its original batch and branch balance
+PASS: refund retry returns original result without another reversal
+PASS: cumulative refund cannot exceed originally sold quantity
+PASS: mixed-tender void records pending external reversal
+PASS: void restores all original sale stock to exact batches
+PASS: non-cash reversal is not falsely marked completed
+PASS: cash-up reconciles captured cash less completed cash refunds
+PASS: closed till rejects checkout
+POS tests: 49 passed, 0 failed.
+
+===== test-print.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: printer_profiles table exists
+PASS: print_templates table exists
+PASS: print_jobs table exists
+PASS: medication_label job is queued
+PASS: medication_label renders printable HTML
+PASS: medication_label job completes
+PASS: dispensing_summary job is queued
+PASS: dispensing_summary renders printable HTML
+PASS: dispensing_summary job completes
+PASS: stock_receipt job is queued
+PASS: stock_receipt renders printable HTML
+PASS: stock_receipt job completes
+PASS: stock receipt renders its tenant-scoped medicine and batch line
+PASS: sale_receipt job is queued
+PASS: sale_receipt renders printable HTML
+PASS: sale_receipt job completes
+PASS: sale receipt uses a dedicated 80 mm thermal document
+PASS: sale receipt renders item and authoritative currency totals
+PASS: sale receipt renders tender evidence
+PASS: print jobs use the protected headless document route
+PASS: tenant cannot print another tenant document
+PASS: repeat document is marked as a reprint
+PASS: reprint output is visibly marked
+PASS: print and reprint actions are audited
+Print tests: 24 passed, 0 failed.
+
+===== test-reporting.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: sales report excludes another branch
+PASS: sales summary reconciles gross, discount, tax and refunds
+PASS: tender report remains branch and currency scoped
+PASS: inventory report excludes other branch stock
+PASS: stock valuation uses batch cost and retail values
+PASS: claims report calculates approved outstanding balance
+PASS: historical margin reverses the exact returned batch cost
+PASS: stock movement report is branch scoped
+PASS: clinical report summarizes dispensing activity
+PASS: audit report is tenant scoped
+PASS: security report is tenant scoped
+PASS: dashboard reuses report totals
+PASS: CSV neutralizes spreadsheet formula injection
+PASS: CSV contains the same net total as the report
+PASS: interactive report ranges over 366 days are rejected
+PASS: PDF export produces a valid PDF signature
+PASS: XLSX export produces a non-empty Open XML package
+PASS: XLSX archive passes ZIP integrity validation
+PASS: XLSX contains workbook, properties, styles, data and summary parts
+PASS: XLSX exposes separate data and summary worksheets
+PASS: XLSX freezes and filters the report header
+PASS: XLSX converts minor currency units into formatted major units
+PASS: XLSX keeps formula-like identifiers as inert text
+PASS: XLSX includes percentage and currency number formats
+PASS: XLSX package part [Content_Types].xml is well-formed XML
+PASS: XLSX package part docProps/core.xml is well-formed XML
+PASS: XLSX package part xl/workbook.xml is well-formed XML
+PASS: XLSX package part xl/styles.xml is well-formed XML
+PASS: XLSX package part xl/worksheets/sheet1.xml is well-formed XML
+PASS: XLSX package part xl/worksheets/sheet2.xml is well-formed XML
+PASS: scheduled report persists format, frequency and recipients
+Reporting tests: 31 passed, 0 failed.
+
+===== test-runtime-schema.php | http://localhost:8080/greenlife-pharmacy =====
+PASS: WordPress multisite is enabled
+PASS: pharmasure-core is network active
+PASS: pharmasure-pos is network active
+PASS: pharmasure-claims is network active
+PASS: pharmasure-reporting is network active
+PASS: pharmasure-integrations is network active
+PASS: pharmasure-offline is network active
+PASS: rate-limit table exists
+PASS: sales column till_session_id exists
+PASS: sales column receipt_number exists
+PASS: sales column idempotency_key exists
+PASS: sales column subtotal_amount_minor exists
+PASS: sales column discount_amount_minor exists
+PASS: sales column tax_amount_minor exists
+PASS: sales column cashier_id exists
+PASS: sales index prescription_sale exists
+PASS: sales index tenant_idempotency exists
+PASS: sales index branch_receipt exists
+PASS: sales index tenant_branch exists
+PASS: sales index tenant_patient exists
+PASS: sales index session_sales exists
+PASS: POS schema version 7 is recorded
+PASS: rate-limit migration is recorded as completed
+Runtime schema tests: 23 passed, 0 failed.
+
+Finished: 2026-08-26T18:02:25.7478652+02:00
+Suites: 31/31 passed

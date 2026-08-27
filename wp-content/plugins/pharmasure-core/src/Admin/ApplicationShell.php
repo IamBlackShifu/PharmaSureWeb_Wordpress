@@ -12,6 +12,8 @@ final class ApplicationShell {
 	}
 
 	public static function is_pharmasure_screen() {
+		// Network administration is the platform control plane, not a tenant workspace.
+		if ( is_network_admin() ) { return false; }
 		$page = sanitize_key( wp_unslash( $_GET['page'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- screen detection only.
 		return str_starts_with( $page, 'pharmasure' );
 	}
