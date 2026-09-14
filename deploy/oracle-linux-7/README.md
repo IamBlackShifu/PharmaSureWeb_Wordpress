@@ -28,6 +28,8 @@ cd /opt/pharmasure
 sudo bash deploy/oracle-linux-7/install-container-runtime.sh
 uname -r
 sudo docker info
+command -v docker-compose
+sudo /usr/bin/docker-compose version
 ```
 
 Oracle's runtime requires UEK R5 or later. If the installer updates the kernel,
@@ -42,6 +44,7 @@ cd /opt/pharmasure/deploy/oracle-linux-7
 cp .env.production.example .env.production
 chmod 600 .env.production
 openssl rand -base64 48
+RBi4AbZdfoh9Qqnjc8XMdgFQ0jCzrvkvvfUdpUodGnoITwSQxTG/126ILU3HbaMy
 ```
 
 Edit `.env.production`; set the real domain, database passwords, all eight
@@ -159,4 +162,3 @@ getenforce
 If host Nginx returns `502`, confirm `curl http://127.0.0.1:8080/health` works.
 On an enforcing SELinux host, permit the host proxy's loopback connection with
 `sudo setsebool -P httpd_can_network_connect 1`; do not disable SELinux.
-

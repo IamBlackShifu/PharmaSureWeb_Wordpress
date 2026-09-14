@@ -20,15 +20,30 @@ systemctl enable --now docker
 
 # Oracle's OL7 Docker package does not include Compose. Compose 1.29.2 is the
 # final v1 release and understands the 2.4 file used by this deployment.
+if [[ "$(uname -m)" != "x86_64" ]]; then
+    echo "This OL7 installer supports x86_64 only; found $(uname -m)." >&2
+    exit 1
+fi
+
+compose_tmp="$(mktemp /tmp/docker-compose.XXXXXX)"
+trap 'rm -f "$compose_tmp"' EXIT
 curl --fail --location --proto '=https' --tlsv1.2 \
     https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Linux-x86_64 \
-    --output /usr/local/bin/docker-compose
-chmod 0755 /usr/local/bin/docker-compose
+    --output "$compose_tmp"
+
+if [[ ! -s "$compose_tmp" ]]; then
+    echo "Docker Compose download is empty." >&2
+    exit 1
+fi
+
+# /usr/bin is present in sudo's secure_path on a default Oracle Linux 7 host.
+install -o root -g root -m 0755 "$compose_tmp" /usr/bin/docker-compose
+rm -f "$compose_tmp"
+trap - EXIT
 
 docker info >/dev/null
-docker-compose version
+/usr/bin/docker-compose version
 
 echo
 echo "Container runtime installed. If yum installed a new kernel, reboot before deployment."
 echo "Oracle requires UEK R5 or later: verify with 'uname -r' after reboot."
-
