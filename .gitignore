@@ -23,6 +23,7 @@ readme.html
 .env
 .env.local
 .env.*.local
+deploy/oracle-linux-7/.env.production
 secrets.txt
 *.pem
 *.key

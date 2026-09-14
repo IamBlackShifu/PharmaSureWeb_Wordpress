@@ -1,0 +1,23 @@
+FROM wordpress:7.0.1-php8.2-fpm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ghostscript \
+        libfreetype6-dev \
+        libicu-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libwebp-dev \
+        libzip-dev \
+    && docker-php-ext-configure gd --with-jpeg --with-webp --with-freetype \
+    && docker-php-ext-install -j"$(nproc)" gd zip intl bcmath pdo_mysql mysqli \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && rm -rf /tmp/pear /var/lib/apt/lists/*
+
+COPY php-production.ini /usr/local/etc/php/conf.d/pharmasure.ini
+
+WORKDIR /var/www/html
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 \
+    CMD php-fpm -t || exit 1
+
