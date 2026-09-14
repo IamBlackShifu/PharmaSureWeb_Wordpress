@@ -1,0 +1,25 @@
+kind: wasmer.io/App.v0
+owner: samkan60
+name: pharmasure
+description: PharmaSure WordPress application
+package: .
+
+env:
+  WORDPRESS_ALLOW_MULTISITE: "true"
+  WORDPRESS_MULTISITE: "true"
+  WORDPRESS_SUBDOMAIN_INSTALL: "false"
+  WORDPRESS_DOMAIN_CURRENT_SITE: "pharmasure.wasmer.app"
+
+capabilities:
+  database:
+    engine: mysql
+
+locality:
+  regions:
+    - fr-roub1
+
+scaling:
+  mode: single_concurrency
+
+redirect:
+  force_https: true
