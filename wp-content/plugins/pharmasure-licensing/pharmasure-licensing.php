@@ -48,8 +48,7 @@ class Plugin {
 	public static function init() {
 		add_action( 'rest_api_init', [ Rest\LicenseController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\SubscriptionController::class, 'register_routes' ] );
-		// Register after Inventory creates the shared PharmaSure parent menu.
-		add_action( 'admin_menu', [ Admin\LicenseAdmin::class, 'register_pages' ], 30 );
+		add_action( 'network_admin_menu', [ Admin\LicenseAdmin::class, 'register_pages' ], 30 );
 	}
 }
 
@@ -76,21 +75,10 @@ class LicenseService {
 	 * Get license for a tenant
 	 */
 	public function get_license( $tenant_id ) {
-		$license = $this->wpdb->get_row(
-			$this->wpdb->prepare(
-				"SELECT l.*, p.name as plan_name FROM {$this->wpdb->prefix}ps_licences l
-				 LEFT JOIN {$this->wpdb->prefix}ps_plans p ON l.plan_id = p.id
-				 WHERE l.tenant_id = %d AND l.status IN ('active', 'grace') 
-				 ORDER BY l.created_at DESC LIMIT 1",
-				$tenant_id
-			)
-		);
-
-		if ( $license ) {
-			// Load entitlements
-			$license->entitlements = $this->get_license_entitlements( $license->id );
-		}
-
+		$validated = ( new \PharmaSure\Core\LicenseManager( $tenant_id ) )->validate_license();
+		if ( is_wp_error( $validated ) ) { return null; }
+		$license = (object) $validated;
+		$license->entitlements = $this->get_license_entitlements( $license->id );
 		return $license;
 	}
 
@@ -225,7 +213,7 @@ class LicenseController {
 		$license = $this->service->get_license( $context->get_tenant_id() );
 
 		if ( ! $license ) {
-			return new \WP_REST_Response( [ 'error' => 'No active license' ], 404 );
+			return ( new \PharmaSure\Core\LicenseManager( $context->get_tenant_id() ) )->validate_license();
 		}
 
 		return rest_ensure_response( (array) $license );
@@ -291,25 +279,23 @@ namespace PharmaSure\Licensing\Admin;
 class LicenseAdmin {
 	public static function register_pages() {
 		add_submenu_page(
-			'pharmasure-tenants',
+			'pharmasure-admin',
 			'Licenses',
 			'Licenses',
-			'manage_options',
+			'manage_network_options',
 			'pharmasure-licenses',
 			[ self::class, 'render_licenses' ]
 		);
 	}
 
 	public static function render_licenses() {
-		global $wpdb;
-		$licenses = $wpdb->get_results(
-			"SELECT l.*, t.name AS tenant_name FROM {$wpdb->prefix}ps_licences l
-			 JOIN {$wpdb->prefix}ps_tenants t ON l.tenant_id = t.id
-			 ORDER BY l.created_at DESC"
-		);
+		if ( ! is_network_admin() || ! current_user_can( 'manage_network_options' ) ) { wp_die( esc_html__( 'Network super-administrator access is required.', 'pharmasure-licensing' ), 403 ); }
+		$tenants = \PharmaSure\Tenancy\Admin\TenantAdmin::platform_tenants();
 		?>
-		<div class="wrap">
-			<h1>Active Licenses</h1>
+		<div class="wrap ps-platform-admin">
+			<header class="ps-platform-masthead"><div><span class="ps-platform-kicker">Network control / licensing</span><h1>Pharmacy licences</h1><p>Plans, validity and grace deadlines across the pharmacy tenants.</p></div></header>
+			<?php \PharmaSure\Tenancy\Admin\TenantAdmin::navigation(); ?>
+			<div class="ps-platform-table-wrap">
 			<table class="wp-list-table widefat fixed striped">
 				<thead>
 					<tr>
@@ -317,23 +303,31 @@ class LicenseAdmin {
 						<th>Plan</th>
 						<th>Status</th>
 						<th>Expires</th>
+						<th>Grace ends</th>
 						<th>Active Users</th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php
-					foreach ( $licenses as $license ) {
+					foreach ( $tenants as $tenant ) {
+						$license = $tenant['licence'];
+						$expires = ! empty( $license['expires_at'] ) ? strtotime( $license['expires_at'] . ' UTC' ) : null;
+						$grace = $expires ? $expires + max( 0, (int) $license['grace_period_days'] ) * DAY_IN_SECONDS : null;
+						$status = $tenant['licence_status'] ?: 'Missing licence';
 						echo '<tr>';
-						echo '<td>' . esc_html( $license->tenant_name ) . '</td>';
-						echo '<td>-</td>';
-						echo '<td><span class="badge">' . esc_html( $license->status ) . '</span></td>';
-						echo '<td>' . esc_html( mysql2date( 'Y-m-d', $license->expires_at ) ) . '</td>';
-						echo '<td>-</td>';
+						echo '<td>' . esc_html( $tenant['trading_name'] ) . '<br><small>/' . esc_html( $tenant['slug'] ) . '</small></td>';
+						echo '<td>' . esc_html( $license['plan_name'] ?? 'Unassigned' ) . '</td>';
+						echo '<td><span class="badge">' . esc_html( $status ) . '</span></td>';
+						echo '<td>' . esc_html( $expires ? gmdate( 'Y-m-d H:i:s', $expires ) . ' UTC' : ( $license ? 'No expiry' : 'Not applicable' ) ) . '</td>';
+						echo '<td>' . esc_html( $grace ? gmdate( 'Y-m-d H:i:s', $grace ) . ' UTC' : 'Not applicable' ) . '</td>';
+						echo '<td>' . (int) $tenant['member_count'] . '</td>';
 						echo '</tr>';
 					}
+					if ( ! $tenants ) { echo '<tr><td colspan="6">No pharmacy tenants have been provisioned.</td></tr>'; }
 					?>
 				</tbody>
 			</table>
+			</div>
 		</div>
 		<?php
 	}

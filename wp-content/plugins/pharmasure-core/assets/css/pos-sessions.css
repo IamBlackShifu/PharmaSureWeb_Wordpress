@@ -1,0 +1,8 @@
+.ps-pos-sessions { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 16px; padding:12px 14px; border:1px solid var(--ps-line); background:var(--ps-surface); }
+.ps-pos-sessions strong, .ps-pos-session-row strong { font-size:0.8571rem; font-weight:600; }
+.ps-pos-sessions p, .ps-pos-session-row p, .ps-pos-session-note { margin:5px 0 0; font-size:0.8571rem; line-height:1.6; color:var(--ps-muted); }
+.ps-pos-session-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--ps-line); }
+.ps-pos-session-row small { display:block; margin-top:5px; color:var(--ps-muted); font-size:0.7857rem; }
+.ps-pos-session-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.ps-pos-session-note { margin-top:14px; }
+@media(max-width:680px) { .ps-pos-sessions,.ps-pos-session-row { flex-direction:column; align-items:flex-start; } }

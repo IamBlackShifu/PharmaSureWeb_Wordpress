@@ -15,13 +15,18 @@ final class TenantAdmin {
 
 	public static function enqueue_assets( $hook_suffix ) {
 		if ( ! str_contains( (string) $hook_suffix, 'pharmasure' ) ) { return; }
-		wp_enqueue_style( 'pharmasure-platform-admin', plugin_dir_url( dirname( __DIR__, 2 ) . '/pharmasure-tenancy.php' ) . 'assets/css/platform-admin.css', array(), \PharmaSure\Tenancy\VERSION );
+		wp_enqueue_style( 'pharmasure-platform-admin', plugin_dir_url( dirname( __DIR__, 2 ) . '/pharmasure-tenancy.php' ) . 'assets/css/platform-admin.css', array(), filemtime( dirname( __DIR__, 2 ) . '/assets/css/platform-admin.css' ) );
 		wp_enqueue_script( 'pharmasure-platform-admin', plugin_dir_url( dirname( __DIR__, 2 ) . '/pharmasure-tenancy.php' ) . 'assets/js/platform-admin.js', array(), \PharmaSure\Tenancy\VERSION, true );
 	}
 
 	public static function render_network_admin() {
-		self::guard(); global $wpdb; $p = $wpdb->base_prefix . 'ps_';
-		$counts = array( 'tenants' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$p}tenants WHERE status!='archived'" ), 'branches' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$p}branches WHERE is_active=1" ), 'members' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$p}tenant_memberships WHERE is_active=1" ), 'licences' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$p}licences WHERE status IN ('active','trial','grace')" ) );
+		self::guard();
+		$counts = array( 'tenants' => 0, 'branches' => 0, 'members' => 0, 'licences' => 0 );
+		foreach ( self::platform_tenants() as $tenant ) {
+			if ( 'archived' === $tenant['status'] ) { continue; }
+			++$counts['tenants']; $counts['branches'] += (int) $tenant['branch_count']; $counts['members'] += (int) $tenant['member_count'];
+			if ( in_array( $tenant['licence_status'], array( 'active', 'trial', 'grace' ), true ) ) { ++$counts['licences']; }
+		}
 		?>
 		<div class="wrap ps-platform-admin">
 			<?php self::masthead( 'Platform command centre', 'Tenant posture, licensing and onboarding readiness across the PharmaSure network.', 'Network control / super admin' ); ?>
@@ -39,10 +44,9 @@ final class TenantAdmin {
 	}
 
 	public static function render_tenant_list() {
-		self::guard(); global $wpdb; $p = $wpdb->base_prefix . 'ps_';
+		self::guard();
 		$status = sanitize_key( wp_unslash( $_GET['status'] ?? '' ) ); $allowed = array( 'active', 'trial', 'suspended' );
-		$where = in_array( $status, $allowed, true ) ? $wpdb->prepare( 't.status=%s', $status ) : "t.status!='archived'";
-		$tenants = $wpdb->get_results( "SELECT t.*,(SELECT COUNT(*) FROM {$p}branches b WHERE b.tenant_id=t.id AND b.is_active=1) branch_count,(SELECT COUNT(*) FROM {$p}tenant_memberships m WHERE m.tenant_id=t.id AND m.is_active=1) member_count,(SELECT u.user_email FROM {$p}tenant_memberships m JOIN {$wpdb->users} u ON u.ID=m.user_id WHERE m.tenant_id=t.id AND m.role='owner' AND m.is_active=1 ORDER BY m.id LIMIT 1) owner_email,(SELECT l.status FROM {$p}licences l WHERE l.tenant_id=t.id ORDER BY l.id DESC LIMIT 1) licence_status,(SELECT map.site_id FROM {$p}tenant_site_mapping map WHERE map.tenant_id=t.id ORDER BY map.id DESC LIMIT 1) site_id FROM {$p}tenants t WHERE {$where} ORDER BY t.created_at DESC,t.id DESC", ARRAY_A );
+		$tenants = array_filter( self::platform_tenants(), static fn( $tenant ) => in_array( $status, $allowed, true ) ? $tenant['status'] === $status : $tenant['status'] !== 'archived' );
 		?>
 		<div class="wrap ps-platform-admin">
 			<?php self::masthead( 'Pharmacy tenant directory', 'A clean platform view of tenant identity, owner, operational scope and licence posture.', 'Tenant control / isolated organisations', network_admin_url( 'admin.php?page=pharmasure-add-tenant' ), 'Provision pharmacy' ); ?>
@@ -86,7 +90,51 @@ final class TenantAdmin {
 		<?php
 	}
 
-	private static function masthead( $title, $description, $eyebrow, $url = '', $label = '' ) { ?><header class="ps-platform-masthead"><div><span class="ps-platform-kicker"><?php echo esc_html( $eyebrow ); ?></span><h1><?php echo esc_html( $title ); ?></h1><p><?php echo esc_html( $description ); ?></p></div><?php if ( $url ) : ?><a class="button button-primary" href="<?php echo esc_url( $url ); ?>"><?php echo esc_html( $label ); ?></a><?php endif; ?></header><?php }
+	/** Read each site's operational records; local IDs are unique only within their site. */
+	public static function platform_tenants() {
+		self::guard(); global $wpdb;
+		$rows = array();
+		$sites = get_sites( array( 'network_id' => get_current_network_id(), 'number' => 0, 'deleted' => 0, 'orderby' => 'id', 'order' => 'ASC' ) );
+		foreach ( $sites as $site ) {
+			$p = $wpdb->get_blog_prefix( (int) $site->blog_id ) . 'ps_';
+			if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $p . 'tenants' ) ) ) ) { continue; }
+			$tenants = $wpdb->get_results( "SELECT t.*,
+			 (SELECT COUNT(*) FROM {$p}branches b WHERE b.tenant_id=t.id AND b.is_active=1) branch_count,
+			 (SELECT COUNT(*) FROM {$p}tenant_memberships m WHERE m.tenant_id=t.id AND m.is_active=1) member_count,
+			 (SELECT u.user_email FROM {$p}tenant_memberships m JOIN {$wpdb->users} u ON u.ID=m.user_id WHERE m.tenant_id=t.id AND m.role='owner' AND m.is_active=1 ORDER BY m.id LIMIT 1) owner_email,
+			 (SELECT map.site_id FROM {$p}tenant_site_mapping map WHERE map.tenant_id=t.id ORDER BY map.id DESC LIMIT 1) site_id
+			 FROM {$p}tenants t ORDER BY t.created_at DESC,t.id DESC", ARRAY_A );
+			foreach ( $tenants as $tenant ) {
+				// Root registry copies point to the pharmacy site; its own tables take precedence.
+				$tenant['site_id'] = (int) $site->blog_id === (int) get_main_site_id() ? (int) $tenant['site_id'] : (int) $site->blog_id;
+				$tenant['licence'] = $wpdb->get_row( $wpdb->prepare( "SELECT l.id,l.status,l.expires_at,l.grace_period_days,p.name AS plan_name FROM {$p}licences l LEFT JOIN {$p}plans p ON p.id=l.plan_id WHERE l.tenant_id=%d ORDER BY l.created_at DESC,l.id DESC LIMIT 1", $tenant['id'] ), ARRAY_A );
+				$tenant['licence_status'] = self::effective_licence_status( $tenant['licence'] );
+				$key = $tenant['site_id'] . ':' . $tenant['id'];
+				$rows[ $key ] = $tenant;
+			}
+		}
+		return array_values( $rows );
+	}
+
+	public static function effective_licence_status( $license ) {
+		if ( ! $license ) { return ''; }
+		$status = $license['status']; $expires = ! empty( $license['expires_at'] ) ? strtotime( $license['expires_at'] . ' UTC' ) : null;
+		if ( in_array( $status, array( 'active', 'trial', 'grace' ), true ) && $expires && time() >= $expires ) {
+			$status = time() < $expires + max( 0, (int) $license['grace_period_days'] ) * DAY_IN_SECONDS ? 'grace' : 'expired';
+		}
+		return $status;
+	}
+
+	public static function navigation() {
+		if ( ! current_user_can( 'manage_network_options' ) ) { return; }
+		$current = sanitize_key( wp_unslash( $_GET['page'] ?? 'pharmasure-admin' ) );
+		echo '<nav class="ps-platform-navigation" aria-label="Platform administration">';
+		foreach ( array( 'pharmasure-admin' => 'Platform overview', 'pharmasure-tenants' => 'Pharmacy tenants', 'pharmasure-licenses' => 'Licensing', 'pharmasure-add-tenant' => 'Provision pharmacy' ) as $page => $label ) {
+			echo '<a href="' . esc_url( network_admin_url( 'admin.php?page=' . $page ) ) . '"' . ( $current === $page ? ' aria-current="page"' : '' ) . '>' . esc_html( $label ) . '</a>';
+		}
+		echo '</nav>';
+	}
+	private static function masthead( $title, $description, $eyebrow, $url = '', $label = '' ) { ?><header class="ps-platform-masthead"><div><span class="ps-platform-kicker"><?php echo esc_html( $eyebrow ); ?></span><h1><?php echo esc_html( $title ); ?></h1><p><?php echo esc_html( $description ); ?></p></div><?php if ( $url ) : ?><a class="button button-primary" href="<?php echo esc_url( $url ); ?>"><?php echo esc_html( $label ); ?></a><?php endif; ?></header><?php self::navigation(); }
 	private static function input( $name, $label, $required = false, $type = 'text', $value = '', $help = '' ) { ?><label class="ps-platform-field"><span><?php echo esc_html( $label ); ?><?php if ( $required ) : ?><i>required</i><?php endif; ?></span><input type="<?php echo esc_attr( $type ); ?>" id="<?php echo esc_attr( $name ); ?>" name="<?php echo esc_attr( $name ); ?>" value="<?php echo 'password' === $type ? '' : esc_attr( wp_unslash( $_POST[ $name ] ?? $value ) ); ?>" <?php echo $required ? 'required' : ''; ?>><?php if ( $help ) : ?><small><?php echo esc_html( $help ); ?></small><?php endif; ?></label><?php }
 	private static function guard() { if ( ! current_user_can( 'manage_network_options' ) ) { wp_die( esc_html__( 'Network super-administrator access is required.', 'pharmasure-tenancy' ), 403 ); } }
 }

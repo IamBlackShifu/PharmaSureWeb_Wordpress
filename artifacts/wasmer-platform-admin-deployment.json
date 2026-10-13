@@ -1,0 +1,27 @@
+﻿{
+    "url":  "https://pharmasure.wasmer.app",
+    "previous_version_id":  "dav_R9EIBtkuoQrj",
+    "verified_at_utc":  "2026-10-12T18:49:51.9913613Z",
+    "accounts_promoted":  false,
+    "version":  "v18",
+    "licence_records_modified":  false,
+    "changes":  [
+                    "Shared network super-admin navigation",
+                    "Licensing moved to network administration",
+                    "Root app and default super-admin login open platform administration",
+                    "Explicit pharmacy context preserved",
+                    "Directory and licensing use site operational data over root registry copies"
+                ],
+    "package":  "sha256:e6625c2df68f7765cad4cbe8cb45d859d72ed3434e86b6672d6bb527d70de1a4",
+    "verification":  [
+                         "Four pages rendered against live database in read-only session; zero read errors",
+                         "Greenwood site 3 licence matches workspace exactly",
+                         "Pharmacy owner denied licensing access and has no platform entry",
+                         "30 Chromium workspace layouts passed",
+                         "Live JS and both CSS hashes match package",
+                         "Public landing, login and logout browser checks passed"
+                     ],
+    "app":  "samkan60/pharmasure",
+    "previous_version":  "v17",
+    "version_id":  "dav_RxJIdt0u9w36"
+}

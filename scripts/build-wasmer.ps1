@@ -82,6 +82,7 @@ try {
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'templates\wp-config.php') -Destination (Join-Path $outputPath 'app\wp-config.php')
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'templates\health.php') -Destination (Join-Path $outputPath 'app\health.php')
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'templates\router.php') -Destination (Join-Path $outputPath 'app\router.php')
+	Copy-Item -LiteralPath (Join-Path $projectRoot 'wp-content\plugins\pharmasure-core\assets\brand\favicon.ico') -Destination (Join-Path $outputPath 'app\favicon.ico')
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'config') -Destination (Join-Path $outputPath 'config') -Recurse
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'app.yaml') -Destination (Join-Path $outputPath 'app.yaml')
 	Copy-Item -LiteralPath (Join-Path $deploymentRoot 'wasmer.toml') -Destination (Join-Path $outputPath 'wasmer.toml')

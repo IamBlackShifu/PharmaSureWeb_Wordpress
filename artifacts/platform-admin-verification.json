@@ -1,0 +1,60 @@
+{
+  "mode": "read-only live network administration",
+  "super_admin": true,
+  "site_id": 1,
+  "checks": [
+    {
+      "page": "pharmasure-admin",
+      "registered": true,
+      "has_platform_navigation": true,
+      "contains_network_links": true,
+      "read_errors": []
+    },
+    {
+      "page": "pharmasure-tenants",
+      "registered": true,
+      "has_platform_navigation": true,
+      "contains_network_links": true,
+      "read_errors": []
+    },
+    {
+      "page": "pharmasure-add-tenant",
+      "registered": true,
+      "has_platform_navigation": true,
+      "contains_network_links": true,
+      "read_errors": []
+    },
+    {
+      "page": "pharmasure-licenses",
+      "registered": true,
+      "has_platform_navigation": true,
+      "contains_network_links": true,
+      "read_errors": [],
+      "shows_plan_and_grace": true
+    }
+  ],
+  "tenant_scopes": [
+    {
+      "site_id": 3,
+      "tenant_id": 1,
+      "slug": "greenwoood-pharmacy",
+      "licence_status": "grace",
+      "expires_at": "2026-10-11 08:52:02"
+    }
+  ],
+  "active_greenwood_licence_matches_workspace": true,
+  "registered_pages": [
+    "pharmasure-admin",
+    "pharmasure-tenants",
+    "pharmasure-add-tenant",
+    "pharmasure-licenses"
+  ],
+  "root_app_redirect": "https://pharmasure.wasmer.app/wp-admin/network/admin.php?page=pharmasure-admin",
+  "super_admin_login_redirect": "https://pharmasure.wasmer.app/wp-admin/network/admin.php?page=pharmasure-admin",
+  "explicit_tenant_login_preserved": true,
+  "explicit_tenant_scope_preserved": true,
+  "tenant_owner_has_platform_entry": false,
+  "tenant_owner_licensing_denied": true,
+  "failures": 0,
+  "verified_at_utc": "2026-10-12T18:47:04.669Z"
+}

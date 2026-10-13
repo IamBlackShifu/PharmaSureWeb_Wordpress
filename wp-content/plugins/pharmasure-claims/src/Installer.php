@@ -27,7 +27,7 @@ final class Installer {
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,tenant_id BIGINT UNSIGNED NOT NULL,branch_id BIGINT UNSIGNED NOT NULL,patient_id BIGINT UNSIGNED NOT NULL,patient_cover_id BIGINT UNSIGNED NOT NULL,
 				insurer_id BIGINT UNSIGNED NOT NULL,scheme_id BIGINT UNSIGNED NOT NULL,sale_id BIGINT UNSIGNED NOT NULL,prescription_id BIGINT UNSIGNED NULL,claim_number VARCHAR(100) NOT NULL,payer_reference VARCHAR(150) NULL,
 				service_date DATE NOT NULL,status VARCHAR(30) NOT NULL DEFAULT 'draft',claimed_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,approved_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,
-				rejected_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,paid_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,writeoff_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,authorization_number VARCHAR(100) NULL,
+				rejected_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,paid_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,writeoff_amount_minor BIGINT UNSIGNED NOT NULL DEFAULT 0,authorization_number VARCHAR(100) NULL,ahfoz_provider_number VARCHAR(100) NULL,
 				rejection_code VARCHAR(50) NULL,rejection_reason VARCHAR(500) NULL,submission_mode VARCHAR(20) NOT NULL DEFAULT 'manual',idempotency_key VARCHAR(100) NOT NULL,submitted_at DATETIME NULL,created_by BIGINT UNSIGNED NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NULL,
 				PRIMARY KEY  (id),UNIQUE KEY tenant_claim_number (tenant_id,claim_number),UNIQUE KEY tenant_idempotency (tenant_id,idempotency_key),UNIQUE KEY sale_claim (tenant_id,sale_id),KEY branch_status (tenant_id,branch_id,status),KEY payer_reference (tenant_id,insurer_id,payer_reference)
 			) $c",

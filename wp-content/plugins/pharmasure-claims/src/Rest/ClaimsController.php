@@ -11,6 +11,7 @@ final class ClaimsController {
 	public function __construct() { $this->service = new ClaimsService(); }
 	public static function register_routes() {
 		$s = new self();
+		register_rest_route('pharmasure/v1','/claims/(?P<id>\d+)/provider',array('methods'=>\WP_REST_Server::CREATABLE,'callback'=>array($s,'provider'),'permission_callback'=>array($s,'can_prepare')));
 		register_rest_route( 'pharmasure/v1', '/claims/workspace', array( 'methods' => \WP_REST_Server::READABLE, 'callback' => array( $s, 'workspace' ), 'permission_callback' => array( $s, 'can_view' ) ) );
 		register_rest_route( 'pharmasure/v1', '/claims/insurers', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $s, 'insurer' ), 'permission_callback' => array( $s, 'can_insurers' ) ) );
 		register_rest_route( 'pharmasure/v1', '/claims/insurers/(?P<id>\d+)/schemes', array( 'methods' => \WP_REST_Server::CREATABLE, 'callback' => array( $s, 'scheme' ), 'permission_callback' => array( $s, 'can_insurers' ) ) );
@@ -38,6 +39,7 @@ final class ClaimsController {
 	public function cover( $r ) { $scope = $this->tenant(); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->create_cover( $scope, (array) $r->get_json_params(), get_current_user_id() ), 201 ); }
 	public function prepare( $r ) { $scope = $this->scope( $r ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->prepare_claim( $scope['tenant_id'], $scope['branch_id'], (array) $r->get_json_params(), get_current_user_id() ), 201 ); }
 	public function get( $r ) { $scope = $this->scope( $r ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->get_claim( $scope['tenant_id'], $scope['branch_id'], absint( $r['id'] ) ), 200 ); }
+	public function provider($r){$scope=$this->scope($r);$data=(array)$r->get_json_params();return is_wp_error($scope)?$scope:$this->respond($this->service->set_provider_number($scope['tenant_id'],$scope['branch_id'],absint($r['id']),$data['ahfoz_provider_number'] ?? '',get_current_user_id()),200);}
 	public function validate_claim( $r ) { $scope = $this->scope( $r ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->validate_claim( $scope['tenant_id'], $scope['branch_id'], absint( $r['id'] ), get_current_user_id() ), 200 ); }
 	public function prepare_submission( $r ) { $scope = $this->scope( $r ); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->prepare_submission( $scope['tenant_id'], $scope['branch_id'], absint( $r['id'] ), get_current_user_id() ), 200 ); }
 	public function submitted( $r ) { $scope = $this->scope( $r ); $b = (array) $r->get_json_params(); return is_wp_error( $scope ) ? $scope : $this->respond( $this->service->mark_submitted( $scope['tenant_id'], $scope['branch_id'], absint( $r['id'] ), $b['payer_reference'] ?? '', get_current_user_id() ), 200 ); }

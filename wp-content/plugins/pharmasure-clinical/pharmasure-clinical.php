@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const VERSION = '1.3.0';
-const DB_VERSION = '2';
+const DB_VERSION = '4';
 
 /**
  * Plugin Name: PharmaSure Clinical
@@ -37,13 +37,18 @@ class Plugin {
 			return;
 		}
 
-		if ( DB_VERSION !== get_site_option( 'pharmasure_clinical_db_version' ) ) {
+		if ( DB_VERSION !== get_option( 'pharmasure_clinical_site_db_version' ) ) {
 			Installer::install();
+			global $wpdb;
+			if(in_array('ahfoz_provider_number',$wpdb->get_col("SHOW COLUMNS FROM {$wpdb->prefix}ps_prescriptions",0),true)){update_option('pharmasure_clinical_site_db_version',DB_VERSION,false);}
 		}
+		// SIG tables use the current site prefix and must migrate on every tenant site.
+		if ( '1' !== get_option( 'pharmasure_sig_db_version' ) ) { Sig\Installer::install(); }
 
 		add_action( 'rest_api_init', [ Rest\PatientController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\PrescriptionController::class, 'register_routes' ] );
 		add_action( 'rest_api_init', [ Rest\ClinicalWorkspaceController::class, 'register_routes' ] );
+		add_action( 'rest_api_init', [ Sig\Controller::class, 'register_routes' ] );
 		// Inventory registers the shared PharmaSure parent menu at the default
 		// priority, so child pages must be added afterwards.
 		add_action( 'admin_menu', [ Admin\ClinicalAdmin::class, 'register_pages' ], 30 );
@@ -156,6 +161,7 @@ class PrescriptionService {
 	 * Create prescription (draft state)
 	 */
 	public function create_prescription( $tenant_id, $branch_id, array $data ) {
+		foreach ( (array) ($data['items'] ?? []) as $item ) { if ( isset( $item['sig'] ) ) { return (new ClinicalWorkspaceService())->create_prescription( $tenant_id, $branch_id, $data, get_current_user_id() ); } }
 		if ( ! $tenant_id || ! $branch_id || empty( $data['patient_id'] ) || empty( $data['prescriber'] ) || empty( $data['prescription_date'] ) || empty( $data['items'] ) || ! is_array( $data['items'] ) ) {
 			return new \WP_Error( 'invalid_prescription', 'Tenant, branch, patient, prescriber, date and at least one item are required' );
 		}
@@ -233,6 +239,8 @@ class PrescriptionService {
 	 * Approve prescription (pharmacist action)
 	 */
 	public function approve_prescription( $tenant_id, $branch_id, $prescription_id, $pharmacist_user_id ) {
+		$has_sig = (int) $this->wpdb->get_var( $this->wpdb->prepare( "SELECT COUNT(*) FROM {$this->wpdb->prefix}ps_sig_instructions s JOIN {$this->wpdb->prefix}ps_prescription_items i ON i.id=s.prescription_item_id AND i.tenant_id=s.tenant_id WHERE s.tenant_id=%d AND s.branch_id=%d AND i.prescription_id=%d", $tenant_id, $branch_id, $prescription_id ) );
+		if ( $has_sig ) { return new \WP_Error( 'sig_review_required', 'Use the clinical review workflow to verify structured SIG directions.', ['status' => 422] ); }
 		$updated = $this->wpdb->update(
 			$this->wpdb->prefix . 'ps_prescriptions',
 			[
@@ -261,6 +269,8 @@ class PrescriptionService {
 	 * Dispense prescription (convert to sale)
 	 */
 	public function dispense_prescription( $tenant_id, $branch_id, $prescription_id, array $dispensing_data ) {
+		$unverified_sig = (int) $this->wpdb->get_var( $this->wpdb->prepare( "SELECT COUNT(*) FROM {$this->wpdb->prefix}ps_sig_instructions s JOIN {$this->wpdb->prefix}ps_prescription_items i ON i.id=s.prescription_item_id AND i.tenant_id=s.tenant_id WHERE s.tenant_id=%d AND s.branch_id=%d AND i.prescription_id=%d AND s.verified_at IS NULL", $tenant_id, $branch_id, $prescription_id ) );
+		if ( $unverified_sig ) { return new \WP_Error( 'sig_review_required', 'Pharmacist SIG verification is required before dispensing.', ['status' => 422] ); }
 		$this->wpdb->query( 'START TRANSACTION' );
 		$prescription = $this->wpdb->get_row(
 			$this->wpdb->prepare(

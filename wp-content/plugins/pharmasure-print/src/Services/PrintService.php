@@ -70,6 +70,10 @@ final class PrintService {
 				 WHERE pr.id=%d AND pr.tenant_id=%d", $entity_id, $tenant_id ), ARRAY_A );
 			if ( ! $header ) { return new \WP_Error( 'not_found', 'Prescription not found for this tenant' ); }
 			$header['items'] = $this->wpdb->get_results( $this->wpdb->prepare( "SELECT * FROM {$this->p}prescription_items WHERE prescription_id=%d AND tenant_id=%d AND branch_id=%d ORDER BY id", $entity_id, $tenant_id, $header['branch_id'] ), ARRAY_A );
+			if ( class_exists( '\PharmaSure\Clinical\Sig\Service' ) ) {
+				$sig = new \PharmaSure\Clinical\Sig\Service();
+				foreach ( $header['items'] as &$item ) { $item['sig'] = $sig->for_item( (int) $tenant_id, (int) $header['branch_id'], (int) $item['id'] ); if ( $type === 'medication_label' && $item['sig'] && empty( $item['sig']['verified_at'] ) ) { return new \WP_Error( 'sig_not_verified', 'Verify patient directions before printing a medication label.', ['status' => 422] ); } } unset( $item );
+			}
 			return $header;
 		}
 		if ( 'stock_receipt' === $type ) {
@@ -107,6 +111,11 @@ final class PrintService {
 	private function labels( $d ) {
 		$out = '';
 		foreach ( $d['items'] as $item ) {
+			if ( ! empty( $item['sig']['verified_at'] ) ) {
+				$pharmacist = get_userdata( (int) $item['sig']['verified_by'] );
+				$out .= '<section class="label"><strong>' . esc_html( $d['tenant_name'] ) . '</strong><div>' . esc_html( $d['branch_name'] ) . '</div><hr><b>' . esc_html( trim( $d['first_name'] . ' ' . $d['last_name'] ) ) . '</b><div class="medicine">' . esc_html( $item['drug_name'] . ' ' . $item['strength'] ) . '</div><div>' . esc_html( $item['sig']['verified_directions'] ) . '</div><div>Quantity: ' . esc_html( $item['quantity'] ) . ' ' . esc_html( $item['sig']['calculation']['stock_unit'] ?? '' ) . '</div><small>Rx #' . esc_html( $d['id'] ) . ' | Dispensed: ' . esc_html( $d['dispensed_at'] ?: 'Not yet dispensed' ) . ' | Verified by: ' . esc_html( $pharmacist ? $pharmacist->display_name : $item['sig']['verified_by'] ) . '</small></section>';
+				continue;
+			}
 			$out .= '<section class="label"><strong>' . esc_html( $d['tenant_name'] ) . '</strong><div>' . esc_html( $d['branch_name'] ) . '</div><hr><b>' . esc_html( trim( $d['first_name'] . ' ' . $d['last_name'] ) ) . '</b><div class="medicine">' . esc_html( $item['drug_name'] ) . ' ' . esc_html( $item['strength'] ) . '</div><div>' . esc_html( $item['dose'] . ' · ' . $item['frequency'] ) . '</div><div>' . esc_html( $item['route'] . ( $item['duration'] ? ' · ' . $item['duration'] : '' ) ) . '</div><small>Rx #' . esc_html( $d['id'] ) . ' · ' . esc_html( $d['prescription_date'] ) . '</small></section>';
 		}
 		return $out ?: '<p>No prescription items.</p>';
@@ -116,8 +125,8 @@ final class PrintService {
 		$title = 'dispensing_summary' === $type ? 'Dispensing Summary' : ( 'stock_receipt' === $type ? 'Goods Received Note' : 'Receipt' );
 		$out = '<header><h1>' . esc_html( $d['tenant_name'] ) . '</h1><div>' . esc_html( $d['branch_name'] ) . '</div><div>' . nl2br( esc_html( $d['receipt_header_text'] ?? '' ) ) . '</div></header><h2>' . esc_html( $title ) . '</h2>';
 		if ( 'dispensing_summary' === $type ) {
-			$out .= '<p><b>Patient:</b> ' . esc_html( trim( $d['first_name'] . ' ' . $d['last_name'] ) ) . ' (' . esc_html( $d['patient_number'] ) . ')<br><b>Prescriber:</b> ' . esc_html( $d['prescriber'] ) . '<br><b>Date:</b> ' . esc_html( $d['prescription_date'] ) . '</p><table><thead><tr><th>Medicine</th><th>Directions</th><th>Qty</th></tr></thead><tbody>';
-			foreach ( $d['items'] as $i ) { $out .= '<tr><td>' . esc_html( $i['drug_name'] . ' ' . $i['strength'] ) . '</td><td>' . esc_html( $i['dose'] . ', ' . $i['frequency'] ) . '</td><td>' . esc_html( $i['quantity'] ) . '</td></tr>'; }
+			$out .= '<p><b>Patient:</b> ' . esc_html( trim( $d['first_name'] . ' ' . $d['last_name'] ) ) . ' (' . esc_html( $d['patient_number'] ) . ')<br><b>Prescriber:</b> ' . esc_html( $d['prescriber'] ) . '<br><b>AHFoZ Provider Payee Number:</b> ' . esc_html($d['ahfoz_provider_number'] ?? '') . '<br><b>Date:</b> ' . esc_html( $d['prescription_date'] ) . '</p><table><thead><tr><th>Medicine</th><th>Directions</th><th>Qty</th></tr></thead><tbody>';
+			foreach ( $d['items'] as $i ) { $out .= '<tr><td>' . esc_html( $i['drug_name'] . ' ' . $i['strength'] ) . '</td><td>' . esc_html( $i['sig']['verified_directions'] ?? ($i['dose'] . ', ' . $i['frequency']) ) . '</td><td>' . esc_html( $i['quantity'] ) . '</td></tr>'; }
 			$out .= '</tbody></table>';
 		} elseif ( 'stock_receipt' === $type ) {
 			$out .= '<p><b>GRN:</b> ' . esc_html( $d['id'] ) . '<br><b>Supplier:</b> ' . esc_html( $d['supplier_name'] ) . '<br><b>Reference:</b> ' . esc_html( $d['purchase_reference'] ) . '<br><b>Received:</b> ' . esc_html( $d['received_date'] ) . '</p><table><thead><tr><th>SKU / Medicine</th><th>Batch</th><th>Expiry</th><th>Qty</th><th>Unit cost</th></tr></thead><tbody>';

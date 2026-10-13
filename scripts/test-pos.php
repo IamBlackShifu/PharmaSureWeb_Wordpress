@@ -26,6 +26,14 @@ try {
 	$till = $service->create_till( $ids['tenant'], $ids['branch_main'], array( 'name' => 'Front Counter', 'code' => 'FC1' ) ); $ids['till'] = (int) ( $till['id'] ?? 0 ); $assert( $ids['till'] > 0, 'branch till is created' );
 	$session = $service->open_session( $ids['tenant'], $ids['branch_main'], $ids['till'], 1, 1000 ); $ids['session'] = (int) ( $session['id'] ?? 0 ); $assert( $ids['session'] > 0, 'cashier opens a till session with float' );
 	$assert( is_wp_error( $service->open_session( $ids['tenant'], $ids['branch_main'], $ids['till'], 1, 0 ) ), 'a till cannot have two open sessions' );
+	$second_till = $service->create_till( $ids['tenant'], $ids['branch_main'], array( 'name' => 'Second Cashier', 'code' => 'FC2' ) );
+	$second_session = $service->open_session( $ids['tenant'], $ids['branch_main'], $second_till['id'], 2, 0 );
+	$assert( ! is_wp_error( $second_session ), 'different cashiers can open separate tills in the same branch' );
+	$assert( is_wp_error( $service->open_session( $ids['tenant'], $ids['branch_main'], $second_till['id'], 1, 0 ) ), 'another login cannot take over an occupied till' );
+	$open_sessions = $service->list_open_sessions( $ids['tenant'], $ids['branch_main'], 1 );
+	$assert( ! is_wp_error( $open_sessions ) && 2 === count( $open_sessions ), 'open branch sessions are discoverable from another login' );
+	$assert( is_wp_error( $service->close_session( $ids['tenant'], $ids['branch_main'], $second_session['id'], 1, 0 ) ), 'ordinary cashier cannot close a colleague session' );
+	$assert( ! is_wp_error( $service->close_session( $ids['tenant'], $ids['branch_main'], $second_session['id'], 2, 0 ) ), 'session owner can close after signing in elsewhere' );
 	$hold = $service->hold_sale( $ids['tenant'], $ids['branch_main'], $ids['session'], 1, array( 'items' => array( array( 'drug_id' => $ids['drug'], 'quantity' => 1 ) ), 'notes' => 'Customer returning' ) ); $ids['hold'] = (int) ( $hold['id'] ?? 0 );
 	$assert( $ids['hold'] > 0 && str_starts_with( $hold['reference'] ?? '', 'H-' ), 'cart is held with a unique reference' );
 	$assert( 1 === count( $service->list_holds( $ids['tenant'], $ids['branch_main'] ) ), 'active branch hold can be retrieved' );

@@ -44,6 +44,8 @@ The interface direction is **clinical precision**: compact and legible informati
 | Offline | Devices, signed mutations, replay, conflicts and security monitoring |
 | Integrations | Configurations, outbox delivery, callbacks and retry monitoring |
 
+Smart SIG adds approved shorthand expansion, a reusable structured dosage builder, quantity previews and verified patient directions to Clinical and the POS prescription handoff. It is disabled until pharmacy clinical acceptance is recorded. See [implementation, testing and activation requirements](docs/SMART-SIG.md).
+
 ## Local development
 
 ```powershell

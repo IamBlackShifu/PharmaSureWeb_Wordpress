@@ -1,0 +1,39 @@
+﻿{
+    "app":  "samkan60/pharmasure",
+    "version":  "v17",
+    "version_id":  "dav_R9EIBtkuoQrj",
+    "previous_version":  "v16",
+    "previous_version_id":  "dav_KE4I8tMuPwb4",
+    "package":  "sha256:9865b5c565898b16db7a7d95a177a6bcae9fe9ae681380754195ce613dfce4bb",
+    "url":  "https://pharmasure.wasmer.app",
+    "verified_at_utc":  "2026-10-12T18:08:59.7274451Z",
+    "fixes":  [
+                  "expired trials receive their recorded grace period",
+                  "licence API includes valid trials using shared validation",
+                  "TenantContext shares expiry/entitlement validation",
+                  "overview enforces inventory entitlement",
+                  "workspace displays exact grace deadline",
+                  "cached licences cannot outlive grace"
+              ],
+    "greenwood_scope":  {
+                            "branch":  1,
+                            "site":  3,
+                            "tenant":  1,
+                            "grace_until_utc":  "2026-10-18 08:52:02"
+                        },
+    "verification":  [
+                         "10 actual production controllers against live database: all 200, read-only session",
+                         "no database read errors",
+                         "manager and pharmacist permissions matched module views",
+                         "anonymous requests denied",
+                         "unauthorized branch selection rejected and posted scope overrides ignored",
+                         "AHFoZ prescription/claim columns exist",
+                         "19 licence lifecycle regression checks",
+                         "14 licensing/tenancy boundary checks",
+                         "38 pharmacy usability checks",
+                         "30 browser layout configurations including grace banner",
+                         "v17 active and public JS/CSS hash match",
+                         "health/login and public desktop/mobile login/logout smoke checks"
+                     ],
+    "limitations":  "Controller verification used a local read-only WordPress bootstrap against live DB; rate-counter persistence was excluded there. Production sale/dispensing/claim writes were not executed."
+}

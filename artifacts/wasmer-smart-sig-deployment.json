@@ -1,0 +1,18 @@
+﻿{
+    "app":  "samkan60/pharmasure",
+    "version":  "v6",
+    "version_id":  "dav_R36ILtguJM36",
+    "previous_version_id":  "dav_R8EIJtWu8GOY",
+    "url":  "https://pharmasure.wasmer.app/app/",
+    "preview_url":  "https://xlhyimcy166m.id.wasmer.app",
+    "deployed_at_utc":  "2026-10-09T07:04:11.8033452Z",
+    "feature":  "smart-sig",
+    "smoke_checks":  [
+                         "health 200",
+                         "login 200",
+                         "SIG assets SHA256 match",
+                         "unauthenticated SIG library 403"
+                     ],
+    "authenticated_workflow_testing":  "pending",
+    "sig_enabled_by_default":  false
+}

@@ -3,15 +3,17 @@
 
   const config = window.PharmaSureConfig || {};
   const mount = document.querySelector('#pharmasure-app');
-  const routes = [
+  const allRoutes = [
     ['overview', 'Overview'], ['pos', 'Point of Sale'], ['inventory', 'Inventory'],
     ['clinical', 'Clinical'], ['claims', 'Claims'], ['reports', 'Reports'],
     ['offline', 'Offline'], ['account', 'Account']
   ];
+  const routes = allRoutes.filter(([slug]) => config.permissions?.[slug] === true);
+  const preferredRoute = config.permissions?.manage_tenant && config.permissions?.overview ? 'overview' : config.permissions?.pos ? 'pos' : config.permissions?.clinical ? 'clinical' : config.permissions?.overview ? 'overview' : routes[0]?.[0];
   const inventoryViews = [
     ['catalogue', 'Catalogue'], ['batches', 'Batches'], ['receipts', 'Receipts'],
     ['movements', 'Movements'], ['low-stock', 'Low stock'], ['expiry', 'Expiry'], ['suppliers', 'Suppliers']
-  ];
+  ].filter(([slug]) => (config.inventoryViews || ['catalogue']).includes(slug));
   const requestedInventoryView = new URLSearchParams(window.location.search).get('view');
   const state = {
     route: routeFromLocation(),
@@ -37,8 +39,8 @@
     claimsSelection: null,
 	reportsData: null,
 	reportType: 'sales',
-	reportFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
-	reportTo: new Date().toISOString().slice(0, 10),
+	reportFrom: today().slice(0,8)+'01',
+	reportTo: today(),
 	accountsData: null,
 	accountSelection: null,
 	offlineData: null,
@@ -66,7 +68,7 @@
 
   function routeFromLocation() {
     const path = window.location.pathname.replace(/^\/app\/?/, '').split('/')[0];
-    return routes.some(([slug]) => slug === path) ? path : 'overview';
+    return routes.some(([slug]) => slug === path) ? path : preferredRoute;
   }
 
   function routeUrl(route) {
@@ -134,10 +136,66 @@
     return button;
   }
 
+  function renderTextSize() {
+    const select = node('select', { 'aria-label': 'Text size' });
+    [['standard','Normal (14px)'],['large','Large (18px)'],['extra-large','Extra large (20px)']].forEach(([value,text])=>select.append(node('option',{value,text})));
+    select.value = config.textSize || 'standard';
+    select.addEventListener('change',async()=>{
+      const previous=config.textSize || 'standard';
+      config.textSize=select.value; document.documentElement.dataset.textSize=config.textSize; select.disabled=true;
+      try { await api('app/preferences/text-size',{method:'POST',body:JSON.stringify({text_size:config.textSize})}); }
+      catch(error){config.textSize=previous;select.value=previous;document.documentElement.dataset.textSize=previous;announce(error.message);}
+      finally{select.disabled=false;}
+    });
+    return node('label',{className:'ps-preference-label'},[node('span',{text:'Text'}),select]);
+  }
+
+  let notificationItems=[];
+  let notificationScope='';
+  let notificationLoading=false;
+  let notificationError='';
+  function renderNotificationButton(){return node('button',{id:'ps-notifications',className:'ps-operation-button',type:'button',text:'Attention',onClick:openNotifications});}
+  async function refreshNotifications(){
+    if(notificationLoading || document.hidden) return;
+    notificationLoading=true; const branch=Number(config.activeBranch);
+    try {
+      const result=await api('app/notifications');
+      if(branch!==Number(config.activeBranch)) return;
+      const next=result.items || [],signature=JSON.stringify(next),scope=String(branch);
+      if(notificationScope===scope && signature!==JSON.stringify(notificationItems) && next.length) announce('Your attention queue has changed.');
+      notificationScope=scope;notificationItems=next;notificationError='';
+      const button=document.querySelector('#ps-notifications');
+      if(button){const count=next.reduce((sum,item)=>sum+Number(item.count||0),0);button.textContent=count ? 'Attention ('+count+')':'Attention';button.setAttribute('aria-label',count+' items need attention');}
+      document.querySelector('#ps-notification-error')?.remove();
+    }catch(error){
+      notificationError=error.message;
+      const button=document.querySelector('#ps-notifications');if(button){button.textContent='Attention unavailable';button.title=error.message;}
+    }finally{notificationLoading=false;}
+  }
+  async function openNotifications(){
+    await refreshNotifications();
+    const dialog=node('dialog',{className:'ps-attention-dialog','aria-label':'Your attention queue'}),nav=node('nav',{'aria-label':'Actionable notifications'});
+    if(notificationError)nav.append(node('p',{role:'alert',text:'Could not refresh the queue: '+notificationError}));
+    if(!notificationError && !notificationItems.length)nav.append(node('p',{text:'No current tasks in your attention queue. Use Refresh to check again.'}));
+    notificationItems.forEach(item=>nav.append(node('button',{type:'button',text:item.label,onClick:()=>{dialog.close();if(item.view){state.inventoryView=inventoryViews.some(([slug])=>slug===item.view)?item.view:'catalogue';}if(item.route==='clinical' && item.filter)state.clinicalFilter=item.filter;navigate(item.route);}})));
+    dialog.append(node('h2',{text:'Your attention queue'}),node('p',{text:'Tasks for your permissions and current branch.'}),nav,node('button',{type:'button',className:'ps-operation-button',text:'Refresh',onClick:()=>{dialog.close();openNotifications();}}),node('button',{type:'button',className:'ps-operation-button',text:'Close',onClick:()=>dialog.close()}));
+    dialog.addEventListener('close',()=>dialog.remove());showPosDialog(dialog);
+  }
+
+  function openPharmacySettings(){
+    const dialog=workspaceDialog('Pharmacy settings','Set receiving markup and your AHFoZ Provider Payee Number.'),form=node('form',{className:'ps-workflow-form'});
+    form.append(node('div',{className:'ps-workflow-form__body ps-workflow-grid'},[workflowField('Default markup (%)','markup_percent','number',config.markupPercent ?? '',{min:0,max:1000,step:.01}),workflowField('AHFoZ Provider Payee Number','ahfoz_provider_number','text',config.ahfozProviderNumber || '',{wide:true})]),posDialogSubmit('Save settings'));
+    form.addEventListener('submit',async event=>{event.preventDefault();try{
+      if(form.elements.markup_percent.value!==''){const value=Number(form.elements.markup_percent.value);const result=await api('app/pricing/markup',{method:'POST',body:JSON.stringify({markup_percent:value})});config.markupPercent=result.markup_percent;}
+      const provider=await api('app/provider',{method:'POST',body:JSON.stringify({ahfoz_provider_number:form.elements.ahfoz_provider_number.value})});config.ahfozProviderNumber=provider.ahfoz_provider_number;
+      state.inventoryOptions=null;dialog.close();announce('Pharmacy settings saved.');
+    }catch(error){workflowError(form,error.message);}});dialog.append(form);showPosDialog(dialog);
+  }
+
   function renderHeader() {
     const brand = node('div', { className: 'ps-brand' }, [
-      node('span', { className: 'ps-brand__mark', 'aria-hidden': 'true', text: 'P' }),
-      node('div', { className: 'ps-brand__text' }, [node('strong', { text: 'PharmaSure' }), node('small', { text: 'Pharmacy operations' })])
+      node('span', { className: 'ps-brand__mark', 'aria-hidden': 'true' }, node('img', { src: config.brandMarkUrl, alt: '', width: 38, height: 38 })),
+      node('div', { className: 'ps-brand__text' }, [node('strong', {}, ['Pharma', node('span', {text:'Sure'})]), node('small', { text: 'Pharmacy operations' })])
     ]);
 
     const nav = node('nav', { className: 'ps-global-nav', 'aria-label': 'Pharmacy modules' });
@@ -166,6 +224,7 @@
       try {
         await api('app/branch', { method: 'POST', body: JSON.stringify({ branch_id: Number(branchSelect.value) }) });
         config.activeBranch = Number(branchSelect.value);
+        notificationItems=[];notificationScope='';const attention=document.querySelector('#ps-notifications');if(attention)attention.textContent='Attention';refreshNotifications();
         state.inventoryOptions = null;
         if (state.route === 'overview') await renderOverview();
         if (state.route === 'inventory') await renderInventory(state.inventoryView, state.inventorySearch);
@@ -190,8 +249,10 @@
         if (state.posCart.length && !window.confirm('The current sale has not been completed. Log out and discard it?')) event.preventDefault();
       }
     }, [node('span', { 'aria-hidden': 'true', text: 'Exit' }), node('strong', { text: 'Log out' })]);
-    const tools = node('div', { className: 'ps-global-tools' }, [
-      renderThemeToggle(), command,
+    const settings = config.permissions?.manage_tenant ? node('button',{className:'ps-operation-button',type:'button',text:'Settings',onClick:openPharmacySettings}) : null;
+    const platform = config.platformAdminUrl ? node('a',{className:'ps-operation-button',href:config.platformAdminUrl,text:'Platform admin'}) : null;
+    const tools = node('div', { className: 'ps-global-tools' }, [platform, settings,
+      renderThemeToggle(), renderTextSize(), renderNotificationButton(), command,
       node('div', { className: 'ps-branch-control' }, [branchLabel, branchSelect]),
       node('span', { className: 'ps-role', text: config.currentUser?.role || 'staff', title: config.currentUser?.displayName || 'Current user' }),
       logout
@@ -202,11 +263,19 @@
   function renderFrame() {
 	window.scrollTo(0, 0);
     mount.replaceChildren(renderHeader(), node('main', { id: 'ps-workspace', className: 'ps-workspace', tabindex: '-1' }));
+    const licence = config.licence;
+    if (licence && ['grace','unavailable'].includes(licence.status)) {
+      const message = licence.status === 'grace'
+        ? `Pharmacy licence is in its grace period until ${licence.grace_until?.replace(' ',' at ')} UTC. Modules remain available; contact your platform administrator to renew before then.`
+        : licence.message;
+      mount.children[0].after(node('div',{className:'ps-licence-notice',role:'status',text:message}));
+    }
     mount.setAttribute('aria-busy', 'false');
+    refreshNotifications();
   }
 
   function navigate(route) {
-    if (!routes.some(([slug]) => slug === route)) route = 'overview';
+    if (!routes.some(([slug]) => slug === route)) route = preferredRoute;
     state.route = route;
     window.history.pushState({ route }, '', route === 'inventory' ? inventoryUrl(state.inventoryView, state.inventorySearch) : routeUrl(route));
     renderFrame();
@@ -214,6 +283,7 @@
   }
 
   function renderRoute() {
+    if(!routes.some(([slug])=>slug===state.route)){document.querySelector('#ps-workspace')?.replaceChildren(node('p',{text:'No workspaces are assigned to your account. Contact your pharmacy manager.'}));return;}
     if (state.route === 'overview') renderOverview();
     else if (state.route === 'pos') renderPos();
     else if (state.route === 'clinical') renderClinical();
@@ -312,7 +382,7 @@
       signal('Low-stock medicines', low, low > 0), signal('Batches expiring soon', expiring, expiring > 0), signal('Security scope', 'Verified', false)
     ]);
     const actions = node('nav', { className: 'ps-quick-actions', 'aria-label': 'Operational quick actions' });
-    [['inventory', 'Review inventory'], ['reports', 'Open movement reports'], ['pos', 'Open point of sale']].forEach(([route, label]) => {
+    [['inventory', 'Review inventory'], ['reports', 'Open movement reports'], ['pos', 'Open point of sale']].filter(([route]) => config.permissions?.[route]).forEach(([route, label]) => {
       const link = node('a', { href: routeUrl(route) }, [node('span', { text: label }), node('span', { 'aria-hidden': 'true', text: '→' })]);
       link.addEventListener('click', event => { event.preventDefault(); navigate(route); });
       actions.append(link);
@@ -334,7 +404,9 @@
     workspace.setAttribute('aria-busy', 'true');
     workspace.replaceChildren(posSkeleton());
     try {
+      const previousSession = state.posData?.session?.id;
       state.posData = await api('pos/workspace');
+      if (previousSession && Number(previousSession) !== Number(state.posData.session?.id || 0)) { resetPosTransaction(); announce('Your till session changed. A fresh sale cart is ready.'); }
       if (!state.posResults.length) state.posResults = state.posData.products || [];
       workspace.replaceChildren(posDashboard());
     } catch (error) {
@@ -356,6 +428,8 @@
     const data = state.posData;
     const session = data.session;
     const headerActions = node('div', { className: 'ps-pos-title__actions' });
+    headerActions.append(node('button', { className: 'ps-operation-button', type: 'button', text: `Open sessions (${(data.open_sessions || []).length})`, onClick: openPosSessionsDialog }));
+    if(config.permissions?.clinical)headerActions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Prescription sale / dispensing', onClick: () => { state.clinicalIntakeRequested = true; navigate('clinical'); } }));
     if (session) {
       headerActions.append(
         node('span', { className: 'ps-pos-session' }, [node('i', { 'aria-hidden': 'true' }), node('span', { text: `${session.till_name} / OPEN` }), node('small', { text: `Since ${formatTime(session.opened_at)}` })]),
@@ -374,7 +448,22 @@
       posMetric('Net sales', money(data.metrics.net_minor, data.scope.currency), 'Live branch position', 'healthy')
     ]);
     const selling = node('section', { className: 'ps-pos-grid', 'aria-label': 'Active sale workspace' }, [posProductPane(), posCartPane(), posTenderPane()]);
-    return node('div', {}, [title, metrics, session ? selling : posNoSession(), posActivity()]);
+    return node('div', {}, [title, metrics, posSessionOverview(), posPrescriptionQueue(), session ? selling : posNoSession(), posActivity()]);
+  }
+
+  function posPrescriptionQueue(){
+    const rows=state.posData.prescription_payments || [],panel=node('section',{className:'ps-panel ps-rx-payment-queue','aria-label':'Prescription payment queue'});
+    panel.append(node('h2',{text:'Prescriptions ready for payment'}),node('button',{type:'button',className:'ps-operation-button',text:'Refresh queue',onClick:async()=>{try{const result=await api('pos/prescriptions/payments');state.posData.prescription_payments=result.data;document.querySelector('.ps-rx-payment-queue')?.replaceWith(posPrescriptionQueue());}catch(error){announce(error.message);}}}));
+    if(!rows.length)panel.append(node('p',{text:'No cash prescriptions awaiting payment in this branch.'}));
+    rows.forEach(sale=>panel.append(node('article',{},[node('div',{},[node('strong',{text:sale.first_name+' '+sale.last_name}),node('p',{text:sale.receipt_number+' / RX-'+sale.prescription_id+' / '+money(sale.total_amount_minor,state.posData.scope.currency)})]),node('button',{type:'button',className:'ps-operation-button ps-operation-button--primary',text:'Pick up & charge',disabled:state.posData.session?null:'disabled',onClick:()=>openPrescriptionPayment(sale)})])));
+    return panel;
+  }
+  function openPrescriptionPayment(sale){
+    const dialog=workspaceDialog('Charge '+sale.receipt_number,'Charge the recorded dispensing. The medicine order and stock have already been processed.'),form=node('form',{className:'ps-workflow-form'});
+    const methods=[['cash','Cash'],['card','Card'],['mobile_money','Mobile money'],['bank_transfer','Bank transfer']];
+    form.append(node('div',{className:'ps-workflow-form__body ps-workflow-grid'},[node('p',{text:sale.first_name+' '+sale.last_name+' — '+money(sale.total_amount_minor,state.posData.scope.currency)}),workflowSelect('Payment method','method',methods,x=>x[0],x=>x[1],{required:true}),workflowField('Reference (required for non-cash)','external_reference','text')]),posDialogSubmit('Record payment'));
+    form.elements.method.value='cash';let posting=false;
+    form.addEventListener('submit',async event=>{event.preventDefault();if(posting)return;posting=true;form.querySelector('[type=submit]').disabled=true;try{await api('pos/prescriptions/'+sale.id+'/charge',{method:'POST',body:JSON.stringify({till_session_id:Number(state.posData.session.id),payments:[{method:form.elements.method.value,amount_minor:Number(sale.total_amount_minor),external_reference:form.elements.external_reference.value}]})});dialog.close();await renderPos();refreshNotifications();announce('Prescription payment recorded.');}catch(error){workflowError(form,error.message);}finally{posting=false;form.querySelector('[type=submit]').disabled=false;}});dialog.append(form);showPosDialog(dialog);
   }
 
   function posMetric(label, value, note, tone = '') {
@@ -503,7 +592,7 @@
   }
 
   function posDiscountControl() {
-    if (!state.posData.permissions.discount || Number(state.posData.pricing.max_discount_bps) <= 0) return node('div', { className: 'ps-pos-policy', text: 'Discounts are disabled by role or branch policy.' });
+    if (!state.posData.permissions.discount || Number(state.posData.pricing.max_discount_bps) <= 0) return null;
     const maximum = Math.floor(posTotals().subtotal * Number(state.posData.pricing.max_discount_bps || 0) / 10000);
     const amount = node('input', { type: 'number', min: '0', max: minorToMajor(maximum), step: '0.01', value: minorToMajor(state.posDiscountMinor), 'aria-label': 'Discount amount' });
     const reason = node('input', { type: 'text', maxlength: '180', value: state.posDiscountReason, placeholder: 'Required reason', 'aria-label': 'Discount reason' });
@@ -607,21 +696,63 @@
     try { await api(`pos/holds/${hold.id}/cancel`, { method: 'POST', body: '{}' }); await renderPos(); announce(`${hold.reference} cancelled.`); } catch (error) { showError(error.message); }
   }
 
-  function openTillDialog() {
+  function posSessionOverview() {
+    const sessions = state.posData.open_sessions || [];
+    const panel = node('section', { className: 'ps-pos-sessions', 'aria-label': 'Branch open till sessions' });
+    panel.append(node('div', {}, [node('strong', { text: `${sessions.length} open ${sessions.length === 1 ? 'session' : 'sessions'} at this branch` }), node('p', { text: 'Each cashier sells through their own till session. Your session is available when you sign in on another device.' })]), node('button', { type: 'button', className: 'ps-operation-button', text: 'View and manage sessions', onClick: openPosSessionsDialog }));
+    return panel;
+  }
+
+  async function openPosSessionsDialog() {
+    const dialog = posDialog('Open branch sessions', 'Review occupied tills and continue or reconcile your own session.');
+    const body = node('div', { className: 'ps-workflow-form__body' }); dialog.append(body); showPosDialog(dialog);
+    async function load() {
+      body.replaceChildren(node('p', { role: 'status', text: 'Loading current branch sessions…' }));
+      try {
+        const response = await api('pos/sessions'); const sessions = response.data || []; state.posData.open_sessions = sessions;
+        body.replaceChildren(node('div', { className: 'ps-pos-session-toolbar' }, [node('button', { type: 'button', className: 'ps-operation-button', text: 'Refresh sessions', onClick: load }), ...(state.posData.permissions.manage_tills ? [node('button', { type: 'button', className: 'ps-operation-button', text: 'Create another till', onClick: () => { dialog.close(); openCreatePosTillDialog(); } })] : [])]));
+        if (!sessions.length) body.append(node('p', { text: 'No open sessions in this branch.' }));
+        sessions.forEach(session => {
+          const actions = node('div', { className: 'ps-pos-session-toolbar' });
+          if (session.is_current_user) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Resume my session', onClick: async () => { dialog.close(); await renderPos(); announce('Your open till session is ready to continue.'); } }), node('button', { className: 'ps-operation-button', type: 'button', text: 'Close and open a new session', onClick: () => { dialog.close(); openCloseTillDialog(session, true); } }));
+          if (session.can_close) actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: session.is_current_user ? 'Close session' : 'Manager close', onClick: () => { dialog.close(); openCloseTillDialog(session); } }));
+          body.append(node('article', { className: 'ps-pos-session-row' }, [node('div', {}, [node('strong', { text: `${session.till_name} / ${session.till_code}` }), node('p', { text: `${session.cashier_name || `Cashier ${session.cashier_id}`}${session.is_current_user ? ' · Your session' : ''}` }), node('small', { text: `Session #${session.id} · Opened ${formatTime(session.opened_at)}` })]), actions]));
+        });
+        body.append(node('p', { className: 'ps-pos-session-note', text: 'Cashiers can work concurrently on separate tills in this branch. Count actual cash before closing a session; login or logout does not close its ledger.' }));
+      } catch (error) { body.replaceChildren(node('div', { className: 'ps-error', role: 'alert', text: error.message })); }
+    }
+    await load();
+  }
+
+  function openCreatePosTillDialog() {
+    const dialog = posDialog('Create branch till', 'Add a separate till for another cashier. Each till has its own cash count and session ledger.');
+    const form = node('form', { method: 'dialog', className: 'ps-workflow-form' }, [node('div', { className: 'ps-workflow-form__body ps-workflow-grid' }, [workflowField('Till name', 'name', 'text', '', { required: true }), workflowField('Unique till code', 'code', 'text', '', { required: true })]), posDialogSubmit('Create till')]);
+    form.addEventListener('submit', async event => { event.preventDefault(); try { await api('pos/tills', { method: 'POST', body: JSON.stringify({ name: form.elements.name.value, code: form.elements.code.value }) }); dialog.close(); await renderPos(); announce('Branch till created.'); if (!state.posData.session) openTillDialog(); } catch (error) { workflowError(form, error.message); } });
+    dialog.append(form); showPosDialog(dialog);
+  }
+
+  async function openTillDialog() {
+    try { state.posData = await api('pos/workspace'); } catch (error) { showError(error.message); return; }
+    if (state.posData.session) { await openPosSessionsDialog(); return; }
     const available = (state.posData.tills || []).filter(till => !till.session_id);
     const dialog = posDialog('Open till session', 'Verify the physical till and record its opening cash float.');
     const form = node('form', { method: 'dialog', className: 'ps-workflow-form' });
     const select = node('select', { name: 'till_id', required: 'required' }); available.forEach(till => select.append(node('option', { value: till.id, text: `${till.name} / ${till.code}` })));
-    form.append(node('div', { className: 'ps-workflow-form__body ps-workflow-grid' }, [node('label', { className: 'ps-workflow-field' }, [node('span', { text: 'Available till' }), select]), workflowField('Opening float', 'opening_float', 'number', '50.00', { min: 0, step: '0.01', className: 'ps-workflow-field--mono' })]), posDialogSubmit('Open secure session'));
+    form.append(node('div', { className: 'ps-workflow-form__body ps-workflow-grid' }, [node('label', { className: 'ps-workflow-field' }, [node('span', { text: 'Available till' }), select]), workflowField('Opening float', 'opening_float', 'number', '0.00', { min: 0, step: '0.01', required: true, className: 'ps-workflow-field--mono' })]), posDialogSubmit('Open secure session'));
     form.addEventListener('submit', async event => { event.preventDefault(); try { await api('pos/sessions/open', { method: 'POST', body: JSON.stringify({ till_id: Number(select.value), opening_float_minor: majorToMinor(form.elements.opening_float.value) }) }); dialog.close(); await renderPos(); announce('Till session opened. Selling controls are active.'); } catch (error) { workflowError(form, error.message); } });
-    if (!available.length) form.replaceChildren(node('div', { className: 'ps-workflow-form__body' }, node('div', { className: 'ps-error', role: 'alert', text: 'No available till exists in this branch. A manager must close another session or create a till.' })));
+    if (!available.length) form.replaceChildren(node('div', { className: 'ps-workflow-form__body' }, [node('p', { text: 'All tills currently have an open session. Review the sessions or add a separate till so another cashier can sell concurrently.' }), node('div', { className: 'ps-pos-session-toolbar' }, [node('button', { className: 'ps-operation-button', type: 'button', text: 'View open sessions', onClick: () => { dialog.close(); openPosSessionsDialog(); } }), ...(state.posData.permissions.manage_tills ? [node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Create another till', onClick: () => { dialog.close(); openCreatePosTillDialog(); } })] : [node('p', { text: 'Ask a manager to add a till for your cashier station.' })])])]));
     dialog.append(form); showPosDialog(dialog);
   }
 
-  function openCloseTillDialog() {
+  function openCloseTillDialog(target = null, openNewAfterClose = false) {
+    const session = target?.id ? target : { ...state.posData.session, is_current_user: true };
+    if (!session?.id) { openPosSessionsDialog(); return; }
     const dialog = posDialog('Close till session', 'Count physical cash. The server compares it with the session ledger and records any variance.');
     const form = node('form', { method: 'dialog', className: 'ps-workflow-form' }, [node('div', { className: 'ps-workflow-form__body' }, workflowField('Counted cash', 'counted_cash', 'number', '', { min: 0, step: '0.01', required: true, className: 'ps-workflow-field--mono' })), posDialogSubmit('Close and reconcile')]);
-    form.addEventListener('submit', async event => { event.preventDefault(); try { const result = await api(`pos/sessions/${state.posData.session.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_minor: majorToMinor(form.elements.counted_cash.value) }) }); dialog.close(); resetPosTransaction(); await renderPos(); announce(`Till closed. Variance: ${money(result.data.variance_minor, state.posData.scope.currency)}.`); } catch (error) { workflowError(form, error.message); } });
+    const body = form.querySelector('.ps-workflow-form__body');
+    body.prepend(node('p', { text: `${session.till_name || 'Till'} · Session #${session.id}${session.cashier_name ? ` · ${session.cashier_name}` : ''}` }));
+    body.append(workflowField(session.is_current_user ? 'Closing notes (optional)' : 'Manager closing reason', 'closing_reason', 'text', '', { required: !session.is_current_user }));
+    form.addEventListener('submit', async event => { event.preventDefault(); try { const result = await api(`pos/sessions/${session.id}/close`, { method: 'POST', body: JSON.stringify({ counted_cash_minor: majorToMinor(form.elements.counted_cash.value), closing_reason: form.elements.closing_reason.value }) }); dialog.close(); if (Number(state.posData.session?.id) === Number(session.id)) resetPosTransaction(); await renderPos(); announce(`Till closed. Variance: ${money(result.data.variance_minor, state.posData.scope.currency)}.`); if (openNewAfterClose) await openTillDialog(); } catch (error) { workflowError(form, error.message); } });
     dialog.append(form); showPosDialog(dialog);
   }
 
@@ -695,6 +826,7 @@
       state.clinicalData = await api(`clinical/workspace${query}`);
       if (state.clinicalPrescription) state.clinicalPrescription = state.clinicalData.prescriptions.find(rx => Number(rx.id) === Number(state.clinicalPrescription.id)) || null;
       workspace.replaceChildren(clinicalDashboard());
+      if (state.clinicalIntakeRequested) { state.clinicalIntakeRequested = false; if (state.clinicalData.permissions.manage_prescriptions) openClinicalPrescriptionDialog(); }
     } catch (error) { workspace.replaceChildren(node('div', { className: 'ps-error', role: 'alert', text: error.message })); }
     finally { workspace.setAttribute('aria-busy', 'false'); }
   }
@@ -704,6 +836,7 @@
     const titleActions = node('div', { className: 'ps-clinical-title__actions' });
     if (permissions.manage_patients) titleActions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'New patient', onClick: openClinicalPatientDialog }));
     if (permissions.manage_prescriptions) titleActions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'New prescription', onClick: () => openClinicalPrescriptionDialog() }));
+    if (permissions.manage_sig && window.PharmaSureSmartSig) titleActions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'SIG approvals & management', onClick: () => { const dialog = clinicalDialog('SIG approvals & pharmacy configuration', 'Review draft terminology, approve new versions and manage clinical acceptance.'); const body = node('div', { className: 'ps-workflow-form__body' }); dialog.append(body); window.PharmaSureSmartSig.management(body, api); showPosDialog(dialog); } }));
     const title = node('section', { className: 'ps-clinical-title' }, [node('div', {}, [node('span', { className: 'ps-eyebrow', text: 'Clinical safety / dispensing control' }), node('h1', { text: 'Clinical workspace' }), node('p', { text: `${data.scope.trading_name} — ${data.scope.branch_name}. Patient-centred review, dispensing and counselling evidence.` })]), titleActions]);
     const metrics = node('section', { className: 'ps-clinical-metrics', 'aria-label': 'Clinical workload summary' }, [
       clinicalMetric('Active patients', data.metrics.active_patients, 'Branch patient register'), clinicalMetric('Awaiting review', data.metrics.pending_review, 'Pharmacist decision queue', Number(data.metrics.pending_review) ? 'warning' : ''),
@@ -778,16 +911,19 @@
     const items = node('div', { className: 'ps-clinical-item-review' });
     rx.items.forEach(item => {
       items.append(node('article', {}, [
-        node('div', {}, [node('strong', { text: `${item.drug_name} ${item.strength || ''}` }), node('small', { text: `${item.dose} · ${item.frequency}${item.duration ? ` · ${item.duration}` : ''}` })]),
+        node('div', {}, [node('strong', { text: `${item.drug_name} ${item.strength || ''}` }), node('small', { text: item.sig?.verified_directions || `${item.dose} · ${item.frequency}${item.duration ? ` · ${item.duration}` : ''}` })]),
         node('span', {}, [node('strong', { className: Number(item.quantity_available) < Number(item.quantity) ? 'is-short' : '', text: `${formatQuantity(item.quantity_available)} stock` }), node('small', { text: `${formatQuantity(item.quantity)} prescribed` })])
       ]));
     });
     panel.append(items);
     const actions = node('div', { className: 'ps-clinical-inspector-actions' }); const permissions = state.clinicalData.permissions;
     if (rx.status === 'draft' && permissions.manage_prescriptions) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Submit for review', onClick: () => clinicalTransition(rx, 'submit') }));
+    if (rx.status === 'dispensed' && permissions.manage_prescriptions) actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Prepare repeat for review', onClick: () => openClinicalPrescriptionDialog(rx.patient_id, rx) }));
     if (rx.status === 'pending_review' && permissions.review) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Review prescription', onClick: () => openClinicalReviewDialog(rx) }));
     if (rx.status === 'approved' && permissions.dispense) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Dispense & counsel', disabled: rx.items.some(item => Number(item.quantity_available) < Number(item.quantity)) ? 'disabled' : null, onClick: () => openClinicalDispenseDialog(rx) }));
     if (rx.status === 'dispensed' && permissions.print) { actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Labels', onClick: () => printClinical('medication_label', rx.id) }), node('button', { className: 'ps-operation-button', type: 'button', text: 'Summary', onClick: () => printClinical('dispensing_summary', rx.id) })); }
+    if(permissions.manage_prescriptions && ['draft','pending_review','approved','rejected'].includes(rx.status))actions.append(node('button',{className:'ps-operation-button ps-operation-button--danger',type:'button',text:'Cancel prescription',onClick:()=>openCancelPrescription(rx)}));
+    panel.append(node('p',{text:'AHFoZ Provider Payee Number: '+(rx.ahfoz_provider_number || 'Not recorded')}));
     panel.append(actions, node('div', { className: 'ps-clinical-safety-note' }, [node('strong', { text: 'Verified workflow' }), node('span', { text: 'Allergy, interaction, dose, counselling and controlled-drug checks are persisted as auditable clinical evidence.' })])); return panel;
   }
 
@@ -802,24 +938,38 @@
   }
 
   function openClinicalPatientDialog() {
-    const dialog = clinicalDialog('Register patient', 'Create a branch-scoped patient safety profile before prescription intake.'); const form = node('form', { method: 'dialog', className: 'ps-workflow-form' });
-    form.append(node('div', { className: 'ps-workflow-form__body ps-workflow-grid' }, [workflowField('First name', 'first_name', 'text', '', { required: true }), workflowField('Last name', 'last_name', 'text', '', { required: true }), workflowField('Date of birth', 'date_of_birth', 'date'), workflowField('Phone', 'phone', 'tel'), workflowField('Email', 'email', 'email'), workflowField('Address', 'address', 'text', '', { wide: true }), workflowField('Allergies / adverse reactions', 'allergies', 'textarea', '', { wide: true }), workflowField('Medical conditions', 'medical_conditions', 'textarea'), workflowField('Current medications', 'current_medications', 'textarea')]), posDialogSubmit('Create patient'));
-    form.addEventListener('submit', async event => { event.preventDefault(); try { const payload = formObject(form); await api('clinical/patients', { method: 'POST', body: JSON.stringify(payload) }); dialog.close(); await renderClinical(); announce('Patient safety profile created.'); } catch (error) { workflowError(form, error.message); } }); dialog.append(form); showPosDialog(dialog);
+    const dialog=clinicalDialog('Register patient','First and last name are required. Add other details when relevant.'),form=node('form',{method:'dialog',className:'ps-workflow-form'});
+    const optional=node('details',{className:'ps-patient-optional'},[node('summary',{text:'Additional patient details (optional)'}),node('div',{className:'ps-workflow-grid'},[workflowField('Date of birth','date_of_birth','date'),workflowField('Phone','phone','tel'),workflowField('Email','email','email'),workflowField('Address','address','text','',{wide:true}),workflowField('Allergies / adverse reactions','allergies','textarea','',{wide:true}),workflowField('Medical conditions','medical_conditions','textarea'),workflowField('Current medications','current_medications','textarea')])]);
+    form.append(node('div',{className:'ps-workflow-form__body'},[node('div',{className:'ps-workflow-grid'},[workflowField('First name','first_name','text','',{required:true}),workflowField('Last name','last_name','text','',{required:true})]),optional]),posDialogSubmit('Create patient'));
+    form.addEventListener('submit',async event=>{event.preventDefault();try{await api('clinical/patients',{method:'POST',body:JSON.stringify(formObject(form))});dialog.close();await renderClinical();announce('Patient record created.');}catch(error){workflowError(form,error.message);}});dialog.append(form);showPosDialog(dialog);
   }
 
-  function openClinicalPrescriptionDialog(patientId = 0) {
+  function openClinicalPrescriptionDialog(patientId = 0, repeatRx = null) {
     const dialog = clinicalDialog('Prescription intake', 'Capture the original order. Medicine identity and price are resolved from the tenant catalogue.'); const form = node('form', { method: 'dialog', className: 'ps-workflow-form' });
     const patient = node('select', { name: 'patient_id', required: 'required' }); patient.append(node('option', { value: '', text: 'Select patient', disabled: 'disabled' })); state.clinicalData.patients.forEach(item => { const option = node('option', { value: item.id, text: `${item.patient_number} / ${item.first_name} ${item.last_name}` }); if (Number(item.id) === Number(patientId || state.clinicalPatient?.id)) option.selected = true; patient.append(option); });
     const lines = node('div', { className: 'ps-clinical-rx-lines' }); const add = () => lines.append(clinicalPrescriptionLine(lines)); add();
-    form.append(node('div', { className: 'ps-workflow-form__body' }, [node('div', { className: 'ps-workflow-grid' }, [node('label', { className: 'ps-workflow-field' }, [node('span', { text: 'Patient' }), patient]), workflowField('Prescriber', 'prescriber', 'text', '', { required: true }), workflowField('Prescription date', 'prescription_date', 'date', today(), { required: true }), workflowField('Source / notes', 'notes', 'text', '', { wide: true })]), node('section', { className: 'ps-line-editor' }, [node('header', { className: 'ps-line-editor__head' }, [node('div', {}, [node('strong', { text: 'Medicine directions' }), node('small', { text: 'Dose, route, frequency, duration and quantity remain on the immutable order.' })]), node('button', { className: 'ps-operation-button', type: 'button', text: '+ Add medicine', onClick: add })]), lines])]), posDialogSubmit('Save draft prescription'));
-    form.addEventListener('submit', async event => { event.preventDefault(); const items = [...lines.querySelectorAll('.ps-clinical-rx-line')].map(line => ({ drug_id: Number(line.querySelector('[name=drug_id]').value), dose: line.querySelector('[name=dose]').value, route: line.querySelector('[name=route]').value, frequency: line.querySelector('[name=frequency]').value, duration: line.querySelector('[name=duration]').value, quantity: Number(line.querySelector('[name=quantity]').value), repeats: Number(line.querySelector('[name=repeats]').value || 0) })); try { const result = await api('clinical/prescriptions', { method: 'POST', body: JSON.stringify({ patient_id: Number(patient.value), prescriber: form.elements.prescriber.value, prescription_date: form.elements.prescription_date.value, notes: form.elements.notes.value, items }) }); dialog.close(); await renderClinical(); state.clinicalPrescription = state.clinicalData.prescriptions.find(rx => Number(rx.id) === Number(result.data.id)); refreshClinicalSurface(); announce('Draft prescription recorded for review.'); } catch (error) { workflowError(form, error.message); } }); dialog.append(form); showPosDialog(dialog);
+    if (repeatRx) {
+      lines.replaceChildren();
+      repeatRx.items.forEach(item => { const line = clinicalPrescriptionLine(lines); lines.append(line); ['drug_id','dose','route','frequency','duration','quantity'].forEach(key => { line.querySelector(`[name=${key}]`).value = item[key] ?? ''; }); line.querySelector('[name=repeats]').value = '0'; line.querySelector('[name=drug_id]').dispatchEvent(new Event('change')); if (item.sig) line.smartSig?.load(item.sig); });
+    }
+    form.append(node('div', { className: 'ps-workflow-form__body' }, [node('div', { className: 'ps-workflow-grid' }, [node('label', { className: 'ps-workflow-field' }, [node('span', { text: 'Patient' }), patient]), workflowField('Prescriber', 'prescriber', 'text', '', { required: true }), workflowField('Prescription date', 'prescription_date', 'date', today(), { required: true }), workflowField('AHFoZ Provider Payee Number', 'ahfoz_provider_number', 'text', config.ahfozProviderNumber || '', { wide: true }), workflowField('Source / notes', 'notes', 'text', '', { wide: true })]), node('section', { className: 'ps-line-editor' }, [node('header', { className: 'ps-line-editor__head' }, [node('div', {}, [node('strong', { text: 'Medicine directions' }), node('small', { text: 'Dose, route, frequency, duration and quantity remain on the immutable order.' })]), node('button', { className: 'ps-operation-button', type: 'button', text: '+ Add medicine', onClick: add })]), lines])]), workflowCheckbox('Send to pharmacist review after saving','submit_for_review',true), posDialogSubmit('Save prescription'));
+    if (repeatRx) { form.elements.notes.value = `Prepared from RX-${repeatRx.id}. Confirm current prescription authority and repeat eligibility before approval.`; }
+    form.addEventListener('submit', async event => { event.preventDefault(); try { const items = [...lines.querySelectorAll('.ps-clinical-rx-line')].map(line => { const sig = line.smartSig?.value(); return { drug_id: Number(line.querySelector('[name=drug_id]').value), dose: line.querySelector('[name=dose]').value, route: line.querySelector('[name=route]').value, frequency: line.querySelector('[name=frequency]').value, duration: line.querySelector('[name=duration]').value, quantity: Number(line.querySelector('[name=quantity]').value), repeats: Number(line.querySelector('[name=repeats]').value || 0), ...(sig ? { sig } : {}) }; }); const result = await api('clinical/prescriptions', { method: 'POST', body: JSON.stringify({ patient_id: Number(patient.value), prescriber: form.elements.prescriber.value, prescription_date: form.elements.prescription_date.value, notes: form.elements.notes.value, ahfoz_provider_number: form.elements.ahfoz_provider_number.value, submit_for_review:Boolean(form.elements.submit_for_review.checked), items }) }); dialog.close(); await renderClinical(); state.clinicalPrescription = state.clinicalData.prescriptions.find(rx => Number(rx.id) === Number(result.data.id)); refreshClinicalSurface(); refreshNotifications();announce(form.elements.submit_for_review.checked ? 'Prescription sent to pharmacist review.' : 'Draft prescription saved.'); } catch (error) { workflowError(form, error.message); } }); dialog.append(form); showPosDialog(dialog);
   }
 
   function clinicalPrescriptionLine(container) {
     const line = node('div', { className: 'ps-clinical-rx-line' }); const drug = node('select', { name: 'drug_id', required: 'required' }, node('option', { value: '', text: 'Medicine…', disabled: 'disabled', selected: 'selected' })); state.clinicalData.drugs.forEach(item => drug.append(node('option', { value: item.id, text: `${item.name} ${item.strength || ''} / ${formatQuantity(item.quantity_available)} available${Number(item.is_controlled) ? ' / CONTROLLED' : ''}` })));
-    line.append(node('label', {}, [node('span', { text: 'Medicine' }), drug]), clinicalLineInput('Dose', 'dose', 'e.g. 1 tablet'), clinicalLineInput('Route', 'route', 'oral'), clinicalLineInput('Frequency', 'frequency', 'twice daily'), clinicalLineInput('Duration', 'duration', '7 days'), clinicalLineInput('Quantity', 'quantity', '1', 'number'), clinicalLineInput('Repeats', 'repeats', '0', 'number'), node('button', { className: 'ps-line-remove', type: 'button', text: 'Remove', onClick: () => { if (container.children.length > 1) line.remove(); } })); return line;
+    line.append(node('label', {}, [node('span', { text: 'Medicine' }), drug]), clinicalLineInput('Dose', 'dose', 'e.g. 1 tablet'), clinicalLineInput('Route', 'route', 'oral'), clinicalLineInput('Frequency', 'frequency', 'twice daily'), clinicalLineInput('Duration', 'duration', '7 days'), clinicalLineInput('Quantity', 'quantity', '1', 'number'), clinicalLineInput('Repeats', 'repeats', '0', 'number'), node('button', { className: 'ps-line-remove', type: 'button', text: 'Remove', onClick: () => { if (container.children.length > 1) line.remove(); } }));
+    if (window.PharmaSureSmartSig) { drug._sigProducts = state.clinicalData.drugs; line.smartSig = window.PharmaSureSmartSig.mount(line, { api, drug, quantity: line.querySelector('[name=quantity]'), legacyFields: ['dose','route','frequency','duration'].map(name => line.querySelector(`[name=${name}]`)) }); }
+    return line;
   }
   function clinicalLineInput(label, name, placeholder, type = 'text') { return node('label', {}, [node('span', { text: label }), node('input', { type, name, placeholder, min: type === 'number' ? '0' : null, step: name === 'quantity' ? '0.001' : null, required: ['dose', 'frequency', 'quantity'].includes(name) ? 'required' : null })]); }
+
+  function openCancelPrescription(rx){
+    const dialog=clinicalDialog('Cancel RX-'+rx.id,'Cancel this undispensed order with a short reason.'),form=node('form',{className:'ps-workflow-form'});
+    form.append(workflowField('Reason','reason','text','',{required:true}),workflowCheckbox('Counselling given verbally','counselling_provided'),workflowField('Written counselling notes (optional)','counselling_notes','textarea'),posDialogSubmit('Cancel prescription'));
+    form.addEventListener('submit',async event=>{event.preventDefault();try{await api('clinical/prescriptions/'+rx.id+'/cancel',{method:'POST',body:JSON.stringify({reason:form.elements.reason.value,counselling_provided:Boolean(form.elements.counselling_provided.checked),counselling_notes:form.elements.counselling_notes.value})});dialog.close();await renderClinical();refreshNotifications();announce('Prescription cancelled.');}catch(error){workflowError(form,error.message);}});dialog.append(form);showPosDialog(dialog);
+  }
 
   async function clinicalTransition(rx, action) { try { await api(`clinical/prescriptions/${rx.id}/${action}`, { method: 'POST', body: '{}' }); await renderClinical(); announce(`Prescription moved to ${action === 'submit' ? 'pharmacist review' : action}.`); } catch (error) { showError(error.message); } }
 
@@ -828,25 +978,27 @@
     const form = node('form', { method: 'dialog', className: 'ps-workflow-form' });
     const checks = node('div', { className: 'ps-clinical-review-checks' }, [workflowCheckbox('Patient allergies and adverse reactions checked', 'allergies_checked'), workflowCheckbox('Interactions and therapeutic duplication checked', 'interactions_checked'), workflowCheckbox('Dose, route, frequency and duration verified', 'dose_checked')]);
     if (Number(rx.controlled_items)) checks.append(workflowCheckbox('Controlled-drug legal requirements verified', 'controlled_drug_attested'));
+    if (rx.items.some(item => item.sig)) checks.append(workflowCheckbox('Original prescription, SIG, structured dosage, patient directions and stock quantity compared and verified', 'sig_verified'));
     const order = node('div', { className: 'ps-clinical-review-order' });
     rx.items.forEach(item => order.append(node('article', {}, [node('strong', { text: `${item.drug_name} ${item.strength || ''}` }), node('span', { text: `${item.dose} · ${item.frequency} · ${formatQuantity(item.quantity)}` }), node('small', { text: `${formatQuantity(item.quantity_available)} available` })])));
+    rx.items.filter(item => item.sig).forEach(item => order.append(node('article', { className: 'ps-sig-review' }, [node('strong', { text: item.drug_name }), node('p', { text: `Original prescription: ${item.sig.original_prescription}` }), node('p', { text: `Shorthand: ${item.sig.original_sig || 'Structured builder'}` }), node('p', { text: `Generated: ${item.sig.generated_directions}` }), node('p', { text: `Patient directions: ${item.sig.verified_directions}` }), node('p', { text: `Stock quantity: ${formatQuantity(item.quantity)} ${item.sig.calculation.stock_unit || ''}. Regimen quantity: ${item.sig.calculation.quantity ?? 'Manual'} ${item.sig.calculation.quantity_unit}.` }), item.sig.reconciliation_reason ? node('p', { text: `Directions reconciliation: ${item.sig.reconciliation_reason}` }) : null, item.sig.quantity_override_reason ? node('p', { text: `Quantity verification: ${item.sig.quantity_override_reason}` }) : null])));
     const footer = node('footer', { className: 'ps-workflow-form__submit' }, [node('button', { className: 'ps-operation-button ps-operation-button--danger', type: 'button', text: 'Reject prescription', onClick: async () => submitClinicalReview(form, dialog, rx, 'reject') }), node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'submit', text: 'Approve prescription' })]);
     form.append(node('div', { className: 'ps-workflow-form__body' }, [order, checks, workflowField('Clinical review rationale', 'review_notes', 'textarea', '', { required: true, wide: true })]), footer);
     form.addEventListener('submit', event => { event.preventDefault(); submitClinicalReview(form, dialog, rx, 'approve'); }); dialog.append(form); showPosDialog(dialog);
   }
 
-  async function submitClinicalReview(form, dialog, rx, outcome) { const payload = { outcome, review_notes: form.elements.review_notes.value, allergies_checked: Boolean(form.elements.allergies_checked?.checked), interactions_checked: Boolean(form.elements.interactions_checked?.checked), dose_checked: Boolean(form.elements.dose_checked?.checked), controlled_drug_attested: Boolean(form.elements.controlled_drug_attested?.checked) }; try { await api(`clinical/prescriptions/${rx.id}/review`, { method: 'POST', body: JSON.stringify(payload) }); dialog.close(); await renderClinical(); announce(`Prescription ${outcome === 'approve' ? 'approved for dispensing' : 'rejected with rationale'}.`); } catch (error) { workflowError(form, error.message); } }
+  async function submitClinicalReview(form, dialog, rx, outcome) { const payload = { outcome, review_notes: form.elements.review_notes.value, allergies_checked: Boolean(form.elements.allergies_checked?.checked), interactions_checked: Boolean(form.elements.interactions_checked?.checked), dose_checked: Boolean(form.elements.dose_checked?.checked), sig_verified: Boolean(form.elements.sig_verified?.checked), controlled_drug_attested: Boolean(form.elements.controlled_drug_attested?.checked) }; try { await api(`clinical/prescriptions/${rx.id}/review`, { method: 'POST', body: JSON.stringify(payload) }); dialog.close(); await renderClinical(); announce(`Prescription ${outcome === 'approve' ? 'approved for dispensing' : 'rejected with rationale'}.`); } catch (error) { workflowError(form, error.message); } }
 
   function openClinicalDispenseDialog(rx) {
-    const dialog = clinicalDialog(`Dispense RX-${String(rx.id).padStart(6, '0')}`, 'Confirm shelf availability, patient counselling and any controlled-drug dual control before committing stock.'); const form = node('form', { method: 'dialog', className: 'ps-workflow-form' }); const controlled = Number(rx.controlled_items) > 0;
+    const dialog = clinicalDialog(`Dispense RX-${String(rx.id).padStart(6, '0')}`, 'Confirm shelf availability, patient counselling and any controlled-drug dual control before committing stock.'); const form = node('form', { method: 'dialog', className: 'ps-workflow-form' }); const controlled = Number(rx.controlled_items) > 0; const dispensingKey=uuid(); let posting=false;
     const itemList = node('div', { className: 'ps-clinical-dispense-items' });
-    rx.items.forEach(item => itemList.append(node('article', {}, [node('div', {}, [node('strong', { text: `${item.drug_name} ${item.strength || ''}` }), node('small', { text: `${item.dose} · ${item.frequency}` })]), node('span', { text: `${formatQuantity(item.quantity)} / ${formatQuantity(item.quantity_available)} available` })])));
-    const body = node('div', { className: 'ps-workflow-form__body' }, [itemList, workflowCheckbox('Counselling provided and patient understanding confirmed', 'counselling_provided'), workflowField('Counselling notes and key advice', 'counselling_notes', 'textarea', '', { required: true, wide: true })]); if (controlled) body.append(workflowField('Authorized witness user ID', 'controlled_witness_user_id', 'number', '', { required: true, min: 1, mono: true })); form.append(body, posDialogSubmit('Commit dispensing'));
-    form.addEventListener('submit', async event => { event.preventDefault(); try { const result = await api(`clinical/prescriptions/${rx.id}/dispense`, { method: 'POST', body: JSON.stringify({ idempotency_key: uuid(), counselling_provided: Boolean(form.elements.counselling_provided.checked), counselling_notes: form.elements.counselling_notes.value, controlled_witness_user_id: Number(form.elements.controlled_witness_user_id?.value || 0) }) }); dialog.close(); await renderClinical(); openClinicalCompletionDialog(result.data); } catch (error) { workflowError(form, error.message); } }); dialog.append(form); showPosDialog(dialog);
+    rx.items.forEach(item => itemList.append(node('article', {}, [node('div', {}, [node('strong', { text: `${item.drug_name} ${item.strength || ''}` }), node('small', { text: item.sig?.verified_directions || `${item.dose} · ${item.frequency}` })]), node('span', { text: `${formatQuantity(item.quantity)} / ${formatQuantity(item.quantity_available)} available` })])));
+    const body = node('div', { className: 'ps-workflow-form__body' }, [itemList, workflowCheckbox('Counselling given verbally and patient understanding confirmed', 'counselling_provided'), workflowField('Written counselling notes (optional)', 'counselling_notes', 'textarea', '', { wide: true })]); if (controlled) body.append(workflowField('Authorized witness user ID', 'controlled_witness_user_id', 'number', '', { required: true, min: 1, mono: true })); form.append(body, posDialogSubmit('Commit dispensing'));
+    form.addEventListener('submit', async event => { event.preventDefault(); if(posting)return;posting=true;form.querySelector('[type=submit]').disabled=true;try { const result = await api(`clinical/prescriptions/${rx.id}/dispense`, { method: 'POST', body: JSON.stringify({ idempotency_key: dispensingKey, counselling_provided: Boolean(form.elements.counselling_provided.checked), counselling_notes: form.elements.counselling_notes.value, controlled_witness_user_id: Number(form.elements.controlled_witness_user_id?.value || 0) }) }); dialog.close(); await renderClinical(); refreshNotifications(); openClinicalCompletionDialog(result.data); } catch (error) { workflowError(form, error.message); } finally {posting=false;form.querySelector('[type=submit]').disabled=false;} }); dialog.append(form); showPosDialog(dialog);
   }
 
   function openClinicalCompletionDialog(result) {
-    const dialog = clinicalDialog('Dispensing completed', 'Stock, clinical checks, historical cost and counselling evidence committed atomically.'); const actions = node('div', { className: 'ps-clinical-completion-actions' }, [node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Medication labels', onClick: () => printClinical('medication_label', result.prescription_id) }), node('button', { className: 'ps-operation-button', type: 'button', text: 'Dispensing summary', onClick: () => printClinical('dispensing_summary', result.prescription_id) })]); if (result.claim_ready && state.clinicalData.permissions.prepare_claims) actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Prepare medical-aid claim', onClick: () => prepareClinicalClaim(result, dialog) })); actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Done', onClick: () => dialog.close() })); dialog.append(node('div', { className: 'ps-clinical-completion' }, [node('span', { text: 'Dispensing reference' }), node('strong', { text: result.receipt_number }), node('small', { text: money(result.total_amount_minor, state.clinicalData.scope.currency) }), result.covers?.length ? node('p', { text: `${result.covers[0].insurer_name} / ${result.covers[0].scheme_name} cover is eligible for claim preparation.` }) : node('p', { text: 'No active medical-aid cover is attached to this patient.' }), actions])); showPosDialog(dialog);
+    const dialog = clinicalDialog('Dispensing completed', 'The cashier can now pick up this prescription in the payment queue. Medical-aid prescriptions can be handed to Claims.'); const actions = node('div', { className: 'ps-clinical-completion-actions' }, [node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Medication labels', onClick: () => printClinical('medication_label', result.prescription_id) }), node('button', { className: 'ps-operation-button', type: 'button', text: 'Dispensing summary', onClick: () => printClinical('dispensing_summary', result.prescription_id) })]); if (result.claim_ready && state.clinicalData.permissions.prepare_claims) actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Prepare medical-aid claim', onClick: () => prepareClinicalClaim(result, dialog) })); actions.append(node('button', { className: 'ps-operation-button', type: 'button', text: 'Done', onClick: () => dialog.close() })); dialog.append(node('div', { className: 'ps-clinical-completion' }, [node('span', { text: 'Dispensing reference' }), node('strong', { text: result.receipt_number }), node('small', { text: money(result.total_amount_minor, state.clinicalData.scope.currency) }), result.covers?.length ? node('p', { text: `${result.covers[0].insurer_name} / ${result.covers[0].scheme_name} cover is eligible for claim preparation.` }) : node('p', { text: 'No active medical-aid cover is attached to this patient.' }), actions])); showPosDialog(dialog);
   }
 
   async function prepareClinicalClaim(result, dialog) { const cover = result.covers?.[0]; if (!cover) return; try { const claim = await api('claims', { method: 'POST', body: JSON.stringify({ sale_id: Number(result.sale_id), patient_cover_id: Number(cover.id), idempotency_key: uuid(), service_date: today() }) }); dialog.close(); announce(`Claim ${claim.data.claim_number} prepared for validation.`); navigate('claims'); } catch (error) { showError(error.message); } }
@@ -892,8 +1044,11 @@
     const lines = node('section', { className: 'ps-claims-lines' }, node('h3', { text: 'Claim lines' })); claim.items.forEach(item => lines.append(node('div', {}, [node('div', {}, [node('strong', { text: item.description }), node('small', { text: `${formatQuantity(item.quantity)} × ${money(item.unit_price_minor,currency)}` })]), node('b', { className: 'ps-number', text: money(item.claimed_amount_minor,currency) })]))); panel.append(lines, claimActions(claim), claimTimeline(claim)); return panel;
   }
 
+  function openClaimProviderDialog(claim){claimFormDialog('AHFoZ provider identity','Confirm the provider/payee number before validating this claim.',[workflowField('AHFoZ Provider Payee Number','ahfoz_provider_number','text',claim.ahfoz_provider_number || config.ahfozProviderNumber || '',{required:true,wide:true})],'Save provider number',async form=>{await api('claims/'+claim.id+'/provider',{method:'POST',body:JSON.stringify(formObject(form))});announce('Claim provider identity saved.');});}
   function claimActions(claim) {
     const actions = node('div', { className: 'ps-claims-actions' }), status = claim.status, p = state.claimsData.permissions;
+    actions.append(node('p',{text:'AHFoZ Provider Payee Number: '+(claim.ahfoz_provider_number || 'Not recorded')}));
+    if(state.claimsData.permissions.prepare && ['draft','queried','rejected'].includes(claim.status))actions.append(node('button',{className:'ps-operation-button',type:'button',text:claim.ahfoz_provider_number?'Edit AHFoZ number':'Add AHFoZ number',onClick:()=>openClaimProviderDialog(claim)}));
     if (p.prepare && ['draft'].includes(status)) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Validate claim', onClick: () => claimCommand(`claims/${claim.id}/validate`, {}, 'Claim validated.') }));
     if (p.prepare && ['queried','rejected'].includes(status)) actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Correct claim', onClick: () => openClaimCorrectionDialog(claim) }));
     if (p.submit && status === 'validated') actions.append(node('button', { className: 'ps-operation-button ps-operation-button--primary', type: 'button', text: 'Prepare submission', onClick: () => claimCommand(`claims/${claim.id}/prepare-submission`, {}, 'Submission handoff prepared.') }));
@@ -985,11 +1140,13 @@
     const canvas = node('section', { className: 'ps-panel ps-inventory-canvas', 'aria-labelledby': 'ps-inventory-view-title' }, [
       inventoryCanvasHeader(data, meta), inventoryTable(data)
     ]);
-    const inspectorPanel = inventoryInspector(data, meta);
-    return node('div', {}, [title, pulse, tabs, inventoryCommandBar(data.view, data.permissions || {}), node('div', { className: 'ps-inventory-body' }, [canvas, inspectorPanel])]);
+    const simpleCatalogue=inventoryViews.length===1;
+    const inspectorPanel = simpleCatalogue ? null : inventoryInspector(data, meta);
+    return node('div', {}, [title, simpleCatalogue ? null : pulse, simpleCatalogue ? null : tabs, inventoryCommandBar(data.view, data.permissions || {}), node('div', { className: simpleCatalogue ? 'ps-inventory-body ps-inventory-body--simple' : 'ps-inventory-body' }, [canvas, inspectorPanel])]);
   }
 
   function inventoryPulse(label, value, view, attention = false) {
+    if(!inventoryViews.some(([slug])=>slug===view))return null;
     const link = node('a', { className: `ps-inventory-pulse__item${attention ? ' is-attention' : ''}`, href: inventoryUrl(view) }, [
       node('span', { text: label }), node('strong', { text: value }), node('small', { text: 'Open register →' })
     ]);
@@ -998,6 +1155,7 @@
   }
 
   function selectInventoryView(view, search = '') {
+    if(!inventoryViews.some(([slug])=>slug===view))view='catalogue';
     state.route = 'inventory';
     state.inventoryView = view;
     state.inventorySearch = search;
@@ -1033,7 +1191,8 @@
     };
     const table = node('table', { className: 'ps-inventory-table' });
     const head = node('tr');
-    headers[data.view].forEach(label => head.append(node('th', { scope: 'col', text: label })));
+    const visibleHeaders=data.view==='catalogue' && inventoryViews.length===1 ? headers[data.view].filter((_,index)=>![3,6].includes(index)) : headers[data.view];
+    visibleHeaders.forEach(label => head.append(node('th', { scope: 'col', text: label })));
     table.append(node('thead', {}, head));
     const body = node('tbody');
     data.rows.forEach(row => body.append(inventoryRow(data.view, row, data.scope.currency, data.permissions || {})));
@@ -1067,6 +1226,7 @@
       cells = [identity(row.name, row.contact_name || 'No contact assigned'), node('td', {}, contact), textCell(row.payment_terms || 'Not recorded'), numberCell(formatInteger(row.receipt_count)), textCell(row.last_receipt ? formatDate(row.last_receipt) : '—'), statusCell(titleCase(row.status), 'success')];
     }
     if (view === 'suppliers') cells.push(permissions.manage_catalogue ? actionCell('Manage', () => openInventoryWorkflow('supplier', row)) : textCell('Read only'));
+    if(view==='catalogue' && inventoryViews.length===1)cells=cells.filter((_,index)=>![3,6].includes(index));
     cells.forEach(cell => tr.append(cell));
     return tr;
   }
@@ -1099,7 +1259,7 @@
       className: `ps-operation-button${tone ? ` ps-operation-button--${tone}` : ''}`,
       type: 'button', text: label, onClick: () => openInventoryWorkflow(type)
     })));
-    if (!available.length) actions.append(node('span', { className: 'ps-record-count', text: 'Read-only access' }));
+    if (!available.length) return null;
     bar.append(intro, actions);
     return bar;
   }
@@ -1200,9 +1360,11 @@
         workflowSelect('Supplier', 'supplier_id', options.suppliers, item => item.id, item => item.name, { required: true }),
         workflowField('Supplier reference', 'purchase_reference', 'text', '', { mono: true }),
         workflowField('Received date', 'received_date', 'date', today(), { required: true }),
-        workflowField('Receiving note', 'notes', 'text', '', { wide: true })
+        workflowField('Receiving note', 'notes', 'text', '', { wide: true }), workflowField('Markup on cost (%)', 'markup_percent', 'number', options.markup_percent ?? config.markupPercent ?? '', { min:0, max:1000, step:.01 })
       );
-      body.append(grid, lineEditor('receipt', options));
+      const editor=lineEditor('receipt', options);
+      grid.querySelector('[name=markup_percent]').addEventListener('input',()=>editor.querySelectorAll('.ps-workflow-line').forEach(line=>line.updateSuggestedPrice?.()));
+      body.append(grid, node('p',{text:'Selling price = cost × (1 + markup / 100). Edit a line price to override; use Suggest price to return to automatic calculation.'}), editor);
       return body;
     } else if (type === 'adjustment') {
       grid.append(
@@ -1226,23 +1388,33 @@
         workflowField('Batch', 'batch_display', 'text', `${record?.sku || ''} / ${record?.batch_number || ''}`, { disabled: true, mono: true, wide: true }),
         workflowSelect('New disposition', 'status', [
           { id: 'quarantined', name: 'Quarantined - unavailable for sale' }, { id: 'active', name: 'Active - release to sale' },
-          { id: 'expired', name: 'Expired - unavailable' }, { id: 'withdrawn', name: 'Withdrawn / recalled' }
+          { id: 'expired', name: 'Expired - unavailable' }, { id: 'withdrawn', name: 'Withdrawn / recalled' }, {id:'disposed',name:'Disposed - physically removed'}
         ], item => item.id, item => item.name, { required: true }),
-        workflowField('Disposition reason', 'reason', 'textarea', '', { required: true, wide: true })
+        workflowField('Disposition reason', 'reason', 'textarea', '', { required: true, wide: true }), workflowSelect('Disposal method (when disposing)', 'disposal_method', [{id:'authorized_waste_contractor',name:'Authorized waste contractor'},{id:'return_to_supplier',name:'Return to supplier'},{id:'other',name:'Other documented method'}],item=>item.id,item=>item.name), workflowField('Disposal reference / notes', 'disposal_reference', 'text', '', {wide:true})
       );
+    }
+    if(type==='batch'){
+      const status=grid.querySelector('[name=status]'),method=grid.querySelector('[name=disposal_method]'),reference=grid.querySelector('[name=disposal_reference]');
+      const eligible=record?.status==='disposed' ? [] : ['expired','withdrawn'].includes(record?.status) ? ['disposed'] : record?.status==='quarantined' ? ['active','expired','withdrawn','disposed'] : ['quarantined','expired','withdrawn',...(record?.expiry_date<=today()?['disposed']:[])];
+      [...status.options].forEach(option=>{if(option.value && !eligible.includes(option.value))option.remove();});
+      if(eligible.length===1)status.value=eligible[0];
+      const update=()=>{const disposing=status.value==='disposed';method.closest('label').hidden=!disposing;reference.closest('label').hidden=!disposing;method.required=disposing;reference.required=disposing;};status.addEventListener('change',update);update();
     }
     body.append(grid);
     return body;
   }
 
   function workflowField(label, name, type = 'text', value = '', settings = {}) {
+    if(type==='date') label += ' (YYYY-MM-DD)';
     const id = `ps-field-${name}-${Math.random().toString(36).slice(2, 7)}`;
     const attributes = { id, name, type, value: value ?? '', autocomplete: 'off' };
     ['min', 'max', 'step'].forEach(key => { if (settings[key] !== undefined) attributes[key] = settings[key]; });
     if (settings.required) attributes.required = '';
     if (settings.disabled) attributes.disabled = '';
     const control = type === 'textarea' ? node('textarea', { id, name, required: settings.required ? '' : null, text: value || '' }) : node('input', attributes);
-    return node('label', { className: `ps-workflow-field${settings.wide ? ' ps-workflow-field--wide' : ''}${settings.mono ? ' ps-workflow-field--mono' : ''}`, htmlFor: id }, [node('span', { text: label }), control]);
+    const dateNote=type==='date' ? node('small',{className:'ps-date-confirmation',text:value || 'YYYY-MM-DD'}) : null;
+    if(dateNote)control.addEventListener('input',()=>{dateNote.textContent=control.value || 'YYYY-MM-DD';});
+    return node('label', { className: `ps-workflow-field${settings.wide ? ' ps-workflow-field--wide' : ''}${settings.mono ? ' ps-workflow-field--mono' : ''}`, htmlFor: id }, [node('span', { text: label }), control, dateNote]);
   }
 
   function workflowCheckbox(label, name, checked) {
@@ -1270,6 +1442,12 @@
           workflowField('Unit cost', 'line_unit_cost', 'number', '', { required: true, min: 0, step: .01 }), workflowField('Selling price', 'line_selling_price', 'number', '', { min: 0, step: .01 }),
           workflowField('Expiry date', 'line_expiry_date', 'date', '', { required: true })
         );
+        const cost=line.querySelector('[name=line_unit_cost]'),price=line.querySelector('[name=line_selling_price]');
+        let overridden=false;
+        const update=()=>{if(overridden)return;const markup=line.closest('form')?.querySelector('[name=markup_percent]')?.value ?? options.markup_percent ?? config.markupPercent; if(markup!==null && markup!=='' && cost.value!=='')price.value=(Math.round(majorToMinor(cost.value)*(1+Number(markup)/100))/100).toFixed(2);};
+        line.updateSuggestedPrice=update;cost.addEventListener('input',update);price.addEventListener('input',()=>{overridden=true;});
+        line.querySelector('[name=line_drug_id]').addEventListener('change',()=>{const drug=options.drugs.find(item=>Number(item.id)===Number(line.querySelector('[name=line_drug_id]').value));if(drug){cost.value=minorToMajor(drug.cost_price_minor);overridden=false;price.value=minorToMajor(drug.selling_price_minor);update();}});
+        line.append(node('button',{className:'ps-operation-button',type:'button',text:'Suggest price',onClick:()=>{overridden=false;update();}}));
       } else {
         line.append(
           workflowSelect('Medicine', 'line_drug_id', options.drugs, item => item.id, item => `${item.sku} - ${item.name}`, { required: true, wide: true }),
@@ -1299,16 +1477,16 @@
       path: `inventory/suppliers${record ? `/${record.id}` : ''}`, method: record ? 'PATCH' : 'POST',
       payload: { name: get('name'), contact_name: get('contact_name'), phone: get('phone'), email: get('email'), tax_number: get('tax_number'), payment_terms: get('payment_terms') }
     };
-    if (type === 'receipt') return { path: 'inventory/receipts', method: 'POST', payload: { supplier_id: Number(get('supplier_id')), purchase_reference: get('purchase_reference'), received_date: get('received_date'), notes: get('notes'), items: collectWorkflowLines(form, type) } };
+    if (type === 'receipt') return { path: 'inventory/receipts', method: 'POST', payload: { supplier_id: Number(get('supplier_id')), purchase_reference: get('purchase_reference'), received_date: get('received_date'), notes: get('notes'), ...(get('markup_percent') !== '' ? {markup_percent:Number(get('markup_percent'))} : {}), items: collectWorkflowLines(form, type) } };
     if (type === 'adjustment') return { path: 'inventory/adjustments', method: 'POST', payload: { reason_code: get('reason_code'), notes: get('notes'), items: [{ batch_id: Number(get('batch_id')), quantity_delta: Number(get('quantity_delta')), reason: get('notes') }] } };
     if (type === 'transfer') return { path: 'inventory/transfers', method: 'POST', payload: { to_branch_id: Number(get('to_branch_id')), notes: get('notes'), items: collectWorkflowLines(form, type) } };
-    return { path: `inventory/batches/${record.id}/status`, method: 'POST', payload: { status: get('status'), reason: get('reason') } };
+    return { path: `inventory/batches/${record.id}/status`, method: 'POST', payload: { status: get('status'), reason: get('reason'), disposal_method:get('disposal_method'),disposal_reference:get('disposal_reference') } };
   }
 
   function collectWorkflowLines(form, type) {
     return [...form.querySelectorAll('.ps-workflow-line')].map(line => {
       const value = name => line.querySelector(`[name="${name}"]`)?.value || '';
-      if (type === 'receipt') return { drug_id: Number(value('line_drug_id')), batch_number: value('line_batch_number').trim(), quantity: Number(value('line_quantity')), unit_cost_minor: majorToMinor(value('line_unit_cost')), selling_price_minor: majorToMinor(value('line_selling_price')), expiry_date: value('line_expiry_date') };
+      if (type === 'receipt') return { drug_id: Number(value('line_drug_id')), batch_number: value('line_batch_number').trim(), quantity: Number(value('line_quantity')), unit_cost_minor: majorToMinor(value('line_unit_cost')), ...(value('line_selling_price')!=='' ? {selling_price_minor:majorToMinor(value('line_selling_price'))}:{}), expiry_date: value('line_expiry_date') };
       return { drug_id: Number(value('line_drug_id')), quantity: Number(value('line_quantity')) };
     });
   }
@@ -1335,7 +1513,7 @@
 
   function majorToMinor(value) { return Math.round(Number(value || 0) * 100); }
   function minorToMajor(value) { return value === undefined || value === null || value === '' ? '' : (Number(value) / 100).toFixed(2); }
-  function today() { return new Date().toISOString().slice(0, 10); }
+  function today() { const date=new Date();return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
 
   function inventoryInspector(data, meta) {
     const labels = {
@@ -1492,13 +1670,10 @@
   function titleCase(value) { return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()); }
   function compactId(value) { const id = String(value || ''); return id ? (id.length > 15 ? `${id.slice(0, 12)}…` : id) : '—'; }
   function mysqlDate(value) { return String(value || '').replace(' ', 'T') + 'Z'; }
-  function formatDate(value) {
-    const date = new Date(`${String(value || '')}T00:00:00Z`);
-    return Number.isNaN(date.getTime()) ? String(value || '—') : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(date);
-  }
+  function formatDate(value) { return /^\d{4}-\d{2}-\d{2}/.test(String(value || '')) ? String(value).slice(0,10) : '—'; }
   function formatTime(value) {
     const date = new Date(mysqlDate(value));
-    return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+    return Number.isNaN(date.getTime()) ? String(value) : `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
   }
 
   document.addEventListener('keydown', event => {
@@ -1516,6 +1691,9 @@
     renderFrame(); renderRoute();
   });
 
+  document.documentElement.dataset.textSize=config.textSize || 'standard';
+  window.setInterval(refreshNotifications,20000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshNotifications();});
   applyTheme(config.theme);
   if (mount) { renderFrame(); renderRoute(); }
 })();

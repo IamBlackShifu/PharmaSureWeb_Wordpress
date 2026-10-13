@@ -4,7 +4,7 @@ Theme URI: https://pharmasure.co.zw/
 Author: Infinity Lines of Code Pvt Ltd
 Author URI: https://infinitylinesofcode.com/
 Description: The presentation layer for the PharmaSure pharmacy management platform.
-Version: 1.2.0
+Version: 1.4.0
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.2
@@ -85,3 +85,4 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 600px) { .admin-bar .portal-header { top: 0; } .wp-site-blocks .alignfull { width: 100% !important; max-width: 100% !important; margin-right: 0 !important; margin-left: 0 !important; } .portal-hero { min-height: auto; padding: 3.5rem 1rem; } .portal-hero > .wp-block-columns { display: block !important; width: 100% !important; max-width: 100% !important; margin-right: 0 !important; margin-left: 0 !important; } .portal-hero > .wp-block-columns > .wp-block-column { width: 100% !important; max-width: 100% !important; flex: none !important; } .portal-hero h1 { max-width: 100%; font-size: clamp(2.35rem,12vw,3rem); letter-spacing: -.045em; line-height: 1; overflow-wrap: anywhere; } .portal-lead { max-width: 100%; font-size: 1.05rem; overflow-wrap: anywhere; } .portal-actions { flex-direction: column; align-items: stretch; width: 100%; } .portal-actions .wp-block-button,.portal-actions .wp-block-button__link { width: 100%; } .portal-actions .wp-block-button__link { text-align: center; } .portal-dashboard { margin-top: 2rem; padding: .75rem; } .portal-dashboard__top { align-items: flex-start; flex-wrap: wrap; gap: .5rem; } .portal-metrics,.portal-proof-grid,.portal-card-grid,.portal-workflow { grid-template-columns: 1fr; } .portal-proof-grid { gap: .7rem; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
 @media print { header,footer,.no-print { display:none!important; } body { color:#000!important;background:#fff!important; } .wp-site-blocks { padding:0!important; } }
+.portal-brand img.portal-brand__mark{width:44px;height:44px;border:0;background:none;box-shadow:none;border-radius:0;object-fit:contain}

@@ -48,10 +48,16 @@ final class ClaimsService {
 		$items = $this->db->get_results( $this->db->prepare( "SELECT * FROM {$this->p}sale_items WHERE tenant_id=%d AND branch_id=%d AND sale_id=%d ORDER BY id", $tenant_id, $branch_id, $sale_id ), ARRAY_A );
 		if ( ! $items ) { return $this->error( 'claim_items_required', 'The sale has no itemized lines to claim.' ); }
 		$claimed = array_sum( array_map( static fn( $item ) => (int) $item['line_total_minor'], $items ) ); $auth = sanitize_text_field( $data['authorization_number'] ?? $cover['authorization_number'] ?? '' );
+		$provider=sanitize_text_field($data['ahfoz_provider_number'] ?? get_option('pharmasure_ahfoz_provider_'.$tenant_id,''));
+		if (!$provider && !empty($sale['prescription_id'])) { $provider=(string)$this->db->get_var($this->db->prepare("SELECT ahfoz_provider_number FROM {$this->p}prescriptions WHERE id=%d AND tenant_id=%d AND branch_id=%d",$sale['prescription_id'],$tenant_id,$branch_id)); }
+		if (strlen($provider)>100) { return $this->error('invalid_provider_number','Provider number must be at most 100 characters.'); }
 		$this->db->query( 'START TRANSACTION' );
 		try {
+			// Serialize claim preparation with cashier pickup on the existing clinical sale.
+			$locked_sale=$this->row("SELECT id,status FROM {$this->p}sales WHERE id=%d AND tenant_id=%d AND branch_id=%d FOR UPDATE",$sale_id,$tenant_id,$branch_id);
+			if (!$locked_sale || !in_array($locked_sale['status'],array('completed','partially_refunded'),true)) { throw new \DomainException('Sale is no longer claimable.'); }
 			$number = $this->next_claim_number( $tenant_id, $branch_id );
-			$ok = $this->db->insert( $this->p . 'claims', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'patient_id' => $sale['patient_id'], 'patient_cover_id' => $cover_id, 'insurer_id' => $cover['insurer_id'], 'scheme_id' => $cover['scheme_id'], 'sale_id' => $sale_id, 'prescription_id' => $sale['prescription_id'] ?: null, 'claim_number' => $number, 'service_date' => $service_date, 'status' => 'draft', 'claimed_amount_minor' => $claimed, 'authorization_number' => $auth ?: null, 'submission_mode' => $cover['submission_mode'], 'idempotency_key' => $key, 'created_by' => $actor_id, 'created_at' => $this->now() ) );
+			$ok = $this->db->insert( $this->p . 'claims', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'patient_id' => $sale['patient_id'], 'patient_cover_id' => $cover_id, 'insurer_id' => $cover['insurer_id'], 'scheme_id' => $cover['scheme_id'], 'sale_id' => $sale_id, 'prescription_id' => $sale['prescription_id'] ?: null, 'claim_number' => $number, 'service_date' => $service_date, 'status' => 'draft', 'claimed_amount_minor' => $claimed, 'authorization_number' => $auth ?: null, 'ahfoz_provider_number'=>$provider ?: null, 'submission_mode' => $cover['submission_mode'], 'idempotency_key' => $key, 'created_by' => $actor_id, 'created_at' => $this->now() ) );
 			if ( false === $ok ) { throw new \DomainException( 'A claim already exists for this sale.' ); }
 			$id = (int) $this->db->insert_id;
 			foreach ( $items as $item ) { if ( false === $this->db->insert( $this->p . 'claim_items', array( 'tenant_id' => $tenant_id, 'claim_id' => $id, 'sale_item_id' => $item['id'], 'drug_id' => $item['drug_id'], 'description' => $item['description'], 'quantity' => $item['quantity'], 'unit_price_minor' => $item['unit_price_minor'], 'claimed_amount_minor' => $item['line_total_minor'] ) ) ) { throw new \RuntimeException( 'Claim line could not be saved.' ); } }
@@ -60,8 +66,21 @@ final class ClaimsService {
 		} catch ( \Throwable $e ) { $this->db->query( 'ROLLBACK' ); return $this->error( 'claim_not_prepared', $e->getMessage(), 409 ); }
 	}
 
+	public function set_provider_number($tenant_id,$branch_id,$claim_id,$value,$actor_id) {
+		$value=trim(sanitize_text_field($value));
+		if (!$value || strlen($value)>100) { return $this->error('invalid_provider_number','Enter an AHFoZ Provider Payee Number of at most 100 characters.'); }
+		$claim=$this->claim($tenant_id,$branch_id,$claim_id);
+		if (!$claim || !in_array($claim['status'],array('draft','queried','rejected'),true)) { return $this->error('provider_snapshot_locked','Provider identity can be edited only before claim validation.',409); }
+		$changed=$this->db->update($this->p.'claims',array('ahfoz_provider_number'=>$value,'updated_at'=>$this->now()),array('id'=>$claim_id,'tenant_id'=>$tenant_id,'branch_id'=>$branch_id,'status'=>$claim['status']));
+		if (false === $changed || (0 === $changed && ($claim['ahfoz_provider_number'] ?? '') !== $value)) { return $this->error('provider_not_saved','The claim changed while saving its provider number.',409); }
+		$this->event($tenant_id,$claim_id,'provider_updated',$claim['status'],$claim['status'],'Provider identity confirmed.',array('ahfoz_provider_number'=>$value),$actor_id);
+		$this->audit($tenant_id,$actor_id,'claims.provider_updated','claim',$claim_id,array('branch_id'=>$branch_id));
+		return array('id'=>(int)$claim_id,'ahfoz_provider_number'=>$value);
+	}
+
 	public function validate_claim( $tenant_id, $branch_id, $claim_id, $actor_id ) {
 		$claim = $this->claim( $tenant_id, $branch_id, $claim_id ); if ( ! $claim || ! in_array( $claim['status'], array( 'draft', 'queried', 'rejected' ), true ) ) { return $this->error( 'claim_not_validatable', 'A draft, queried or rejected branch claim is required.', 409 ); }
+		if (empty($claim['ahfoz_provider_number'])) { return $this->error('ahfoz_provider_required','Enter the AHFoZ Provider Payee Number before validating this claim.'); }
 		$cover = $this->row( "SELECT c.*,s.authorization_required FROM {$this->p}patient_covers c JOIN {$this->p}insurer_schemes s ON s.id=c.scheme_id AND s.tenant_id=c.tenant_id WHERE c.id=%d AND c.tenant_id=%d", $claim['patient_cover_id'], $tenant_id );
 		$count = (int) $this->db->get_var( $this->db->prepare( "SELECT COUNT(*) FROM {$this->p}claim_items WHERE tenant_id=%d AND claim_id=%d AND claimed_amount_minor>0", $tenant_id, $claim_id ) );
 		if ( ! $cover || $claim['service_date'] < $cover['valid_from'] || ( $cover['valid_to'] && $claim['service_date'] > $cover['valid_to'] ) || ! $count ) { return $this->error( 'claim_validation_failed', 'Cover must be valid on the service date and the claim must contain positive lines.' ); }

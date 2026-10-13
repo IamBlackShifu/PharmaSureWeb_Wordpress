@@ -65,19 +65,22 @@ class LicenseManager {
              LEFT JOIN {$wpdb->prefix}" . PHARMASURE_TABLE_PREFIX . "plans p ON l.plan_id = p.id
              WHERE l.tenant_id = %d 
              AND l.status IN ('active', 'trial', 'grace')
-             AND (l.expires_at IS NULL OR l.expires_at > NOW())
              ORDER BY l.created_at DESC 
              LIMIT 1",
             $this->tenant_id
         ), ARRAY_A );
 
         if ( ! $license ) {
-            return new \WP_Error( 'license_not_found', 'No active license found for tenant' );
+            return new \WP_Error( 'license_not_found', 'No active licence is assigned to this pharmacy. Contact the platform administrator.', array( 'status' => 403 ) );
         }
 
         // Check if expired or grace period
         $status = $this->determine_license_status( $license );
         $license['status'] = $status;
+        if ( ! in_array( $status, array( 'active', 'trial', 'grace' ), true ) ) {
+            return new \WP_Error( 'license_expired', 'This pharmacy licence and its grace period have expired. Contact the platform administrator to renew it.', array( 'status' => 403 ) );
+        }
+        $license['grace_until'] = $this->grace_until( $license );
 
         // Load entitlements
         $license['entitlements'] = $this->get_license_entitlements( $license['id'] );
@@ -185,16 +188,16 @@ class LicenseManager {
             return 'revoked';
         }
 
-        $now = new \DateTime( 'UTC' );
+        $now = new \DateTime( 'now', new \DateTimeZone( 'UTC' ) );
         
-        if ( $license['expires_at'] ) {
-            $expires = new \DateTime( $license['expires_at'] );
-            $grace_days = (int) ( $license['grace_period_days'] ?? 14 );
+        if ( ! empty( $license['expires_at'] ) ) {
+            $expires = new \DateTime( $license['expires_at'], new \DateTimeZone( 'UTC' ) );
+            $grace_days = max( 0, (int) ( $license['grace_period_days'] ?? 14 ) );
             $grace_until = ( clone $expires )->modify( "+{$grace_days} days" );
             
-            if ( $now > $grace_until ) {
+            if ( $now >= $grace_until ) {
                 return 'expired';
-            } elseif ( $now > $expires ) {
+            } elseif ( $now >= $expires ) {
                 return 'grace';
             }
         }
@@ -204,6 +207,22 @@ class LicenseManager {
         }
 
         return $license['status'] === 'trial' ? 'trial' : 'active';
+    }
+
+    private function grace_until( array $license ) {
+        if ( empty( $license['expires_at'] ) ) { return null; }
+        return ( new \DateTimeImmutable( $license['expires_at'], new \DateTimeZone( 'UTC' ) ) )
+            ->modify( '+' . max( 0, (int) ( $license['grace_period_days'] ?? 14 ) ) . ' days' )
+            ->format( 'Y-m-d H:i:s' );
+    }
+
+    /** Public workspace metadata excludes keys, tokens and billing details. */
+    public function summary() {
+        $license = $this->validate_license();
+        if ( is_wp_error( $license ) ) {
+            return array( 'status' => 'unavailable', 'code' => $license->get_error_code(), 'message' => $license->get_error_message() );
+        }
+        return array( 'status' => $license['status'], 'expires_at' => $license['expires_at'] ?? null, 'grace_until' => $this->grace_until( $license ) );
     }
 
 	/**
@@ -273,7 +292,9 @@ class LicenseManager {
         
         if ( $cached ) {
             // Verify not expired
-            if ( isset( $cached['cache_expires_at'] ) && time() < $cached['cache_expires_at'] ) {
+            if ( isset( $cached['cache_expires_at'] ) && time() < $cached['cache_expires_at']
+                && in_array( $this->determine_license_status( $cached ), array( 'active', 'trial', 'grace' ), true ) ) {
+                $cached['status'] = $this->determine_license_status( $cached );
                 return $cached;
             }
             wp_cache_delete( $cache_key );

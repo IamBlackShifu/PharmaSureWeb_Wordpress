@@ -1,0 +1,33 @@
+﻿{
+    "app":  "samkan60/pharmasure",
+    "version":  "v16",
+    "version_id":  "dav_KE4I8tMuPwb4",
+    "previous_version":  "v15",
+    "previous_version_id":  "dav_Ra7Iet1up8mD",
+    "package":  "sha256:7577f0ec77085859e43df2c9a023724ae53fefba1bd2e958d19a61ae9dd2bfaf",
+    "url":  "https://pharmasure.wasmer.app",
+    "verified_at_utc":  "2026-10-12T13:32:26.0454715Z",
+    "changes":  [
+                    "original Normal 14px typography restored",
+                    "Large 18px and Extra large 20px retained",
+                    "automatic header rows prevent wrapped tools overlapping content",
+                    "original control and table hierarchy restored",
+                    "larger panels reflow"
+                ],
+    "local_checks":  [
+                         "30 Chromium layouts: 3 sizes, 2 themes, 5 viewport widths",
+                         "38 usability service assertions",
+                         "frontend usability checks",
+                         "7 login routing checks",
+                         "14 licensing/tenancy boundary checks"
+                     ],
+    "live_checks":  [
+                        "active v16 confirmed",
+                        "app.js and crisp-theme.css SHA256 match",
+                        "health and login 200",
+                        "desktop/mobile public layout and login/logout browser checks",
+                        "licence and tenant APIs reject anonymous requests",
+                        "network provisioning page redirects anonymous requests to login"
+                    ],
+    "licensing_tenancy":  "No service changes or regression found in reviewed boundaries; full authenticated tenant creation/database migration UAT remains pending."
+}

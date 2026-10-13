@@ -41,6 +41,7 @@ final class Installer {
 			branch_id BIGINT UNSIGNED NOT NULL,
 			patient_id BIGINT UNSIGNED NOT NULL,
 			prescriber VARCHAR(255) NOT NULL,
+			ahfoz_provider_number VARCHAR(100) NULL,
 			prescription_date DATE NOT NULL,
 			status VARCHAR(30) NOT NULL DEFAULT 'draft',
 			notes TEXT NULL,
@@ -171,6 +172,7 @@ final class Installer {
 			$wpdb->query( "UPDATE {$item_table} i JOIN {$prefix}prescriptions p ON p.id=i.prescription_id SET i.tenant_id=p.tenant_id,i.branch_id=p.branch_id,i.created_at=COALESCE(i.created_at,p.created_at) WHERE i.tenant_id=0 OR i.branch_id=0 OR i.created_at IS NULL" );
 			$wpdb->query( "ALTER TABLE {$item_table} MODIFY tenant_id BIGINT UNSIGNED NOT NULL,MODIFY branch_id BIGINT UNSIGNED NOT NULL,MODIFY created_at DATETIME NOT NULL" );
 		}
+		Sig\Installer::install();
 		update_site_option( 'pharmasure_clinical_db_version', DB_VERSION );
 	}
 }

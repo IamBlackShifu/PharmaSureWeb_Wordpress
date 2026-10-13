@@ -167,6 +167,17 @@ final class InventoryService {
 		if ( ! $this->owns_active_branch( $tenant_id, $branch_id ) || ! $this->owns_active_record( 'suppliers', $tenant_id, $supplier_id ) ) {
 			return new \WP_Error( 'invalid_scope', 'Branch or supplier does not belong to the current tenant.', array( 'status' => 403 ) );
 		}
+		$markup=$data['markup_percent'] ?? get_option('pharmasure_receiving_markup_'.$tenant_id,null);
+		if ($markup !== null && (!is_numeric($markup) || !is_finite((float)$markup) || (float)$markup<0 || (float)$markup>1000)) { return new \WP_Error('invalid_markup','Markup must be between 0 and 1000 percent.',array('status'=>422)); }
+		foreach ($items as &$item) {
+			if (!is_array($item)) { return new \WP_Error('invalid_receipt_item','Receipt lines must be objects.',array('status'=>422)); }
+			if (!array_key_exists('selling_price_minor',$item) || $item['selling_price_minor'] === '') {
+				if ($markup === null) { return new \WP_Error('selling_price_required','Set a markup or enter a selling price for every line.',array('status'=>422)); }
+				$item['selling_price_minor']=(int)round((int)($item['unit_cost_minor'] ?? 0)*(1+(float)$markup/100));
+			}
+			if (!is_numeric($item['selling_price_minor']) || !is_finite((float)$item['selling_price_minor']) || (float)$item['selling_price_minor']<0 || (float)$item['selling_price_minor']>PHP_INT_MAX) { return new \WP_Error('invalid_selling_price','Enter a valid non-negative selling price.',array('status'=>422)); }
+		}
+		unset($item);
 		$seen_receipt_batches = array();
 		foreach ( $items as $item ) {
 			if ( ! $this->validate_receipt_item( $tenant_id, $item, $received_date ) ) {
@@ -190,6 +201,8 @@ final class InventoryService {
 				$manufacture = empty( $item['manufacture_date'] ) ? null : sanitize_text_field( $item['manufacture_date'] );
 				$existing_batch = $this->db->get_row( $this->db->prepare( "SELECT id,status,expiry_date FROM {$this->p}batches WHERE tenant_id=%d AND branch_id=%d AND drug_id=%d AND batch_number=%s FOR UPDATE", $tenant_id, $branch_id, $drug_id, $batch_number ), ARRAY_A );
 				if ( $existing_batch && ( 'active' !== $existing_batch['status'] || $expiry !== $existing_batch['expiry_date'] ) ) { throw new \DomainException( 'batch_conflict' ); }
+				// Catalogue pricing feeds POS and new prescriptions; receipt and batch keep their own snapshots.
+				if (false === $this->db->update($this->p.'drugs',array('cost_price_minor'=>$cost,'selling_price_minor'=>$price,'updated_at'=>$now),array('id'=>$drug_id,'tenant_id'=>$tenant_id))) { throw new \RuntimeException('Catalogue pricing could not be updated.'); }
 				$this->must_insert( 'stock_receipt_lines', array( 'tenant_id' => $tenant_id, 'receipt_id' => $receipt_id, 'drug_id' => $drug_id, 'batch_number' => $batch_number, 'quantity' => $qty, 'unit_cost_minor' => $cost, 'selling_price_minor' => $price, 'manufacture_date' => $manufacture, 'expiry_date' => $expiry, 'status' => 'completed', 'created_at' => $now ) );
 				$this->db->query( $this->db->prepare( "INSERT INTO {$this->p}batches (tenant_id,branch_id,drug_id,supplier_id,batch_number,manufacture_date,expiry_date,quantity_received,quantity_available,unit_cost_minor,selling_price_minor,status,created_at,updated_at) VALUES (%d,%d,%d,%d,%s,%s,%s,%f,%f,%d,%d,'active',%s,%s) ON DUPLICATE KEY UPDATE quantity_received=quantity_received+VALUES(quantity_received),quantity_available=quantity_available+VALUES(quantity_available),unit_cost_minor=VALUES(unit_cost_minor),selling_price_minor=VALUES(selling_price_minor),expiry_date=VALUES(expiry_date),updated_at=VALUES(updated_at)", $tenant_id, $branch_id, $drug_id, $supplier_id, $batch_number, $manufacture, $expiry, $qty, $qty, $cost, $price, $now, $now ) );
 				if ( $this->db->last_error ) { throw new \RuntimeException( $this->db->last_error ); }
@@ -216,6 +229,7 @@ final class InventoryService {
 			return new \WP_Error( 'invalid_scope', 'An authorized active branch is required.', array( 'status' => 403 ) );
 		}
 		return array(
+			'markup_percent' => get_option('pharmasure_receiving_markup_'.$tenant_id,null),
 			'drugs' => $this->db->get_results( $this->db->prepare( "SELECT id,sku,name,strength,unit_of_measure,cost_price_minor,selling_price_minor,reorder_level FROM {$this->p}drugs WHERE tenant_id=%d AND status='active' ORDER BY name", $tenant_id ), ARRAY_A ),
 			'suppliers' => $this->db->get_results( $this->db->prepare( "SELECT id,name,payment_terms FROM {$this->p}suppliers WHERE tenant_id=%d AND status='active' ORDER BY name", $tenant_id ), ARRAY_A ),
 			'batches' => $this->db->get_results( $this->db->prepare( "SELECT b.id,b.drug_id,b.batch_number,b.expiry_date,b.quantity_available,b.status,d.sku,d.name FROM {$this->p}batches b JOIN {$this->p}drugs d ON d.id=b.drug_id AND d.tenant_id=b.tenant_id WHERE b.tenant_id=%d AND b.branch_id=%d AND b.quantity_available>0 ORDER BY b.expiry_date,b.id", $tenant_id, $branch_id ), ARRAY_A ),
@@ -266,14 +280,17 @@ final class InventoryService {
 	public function change_batch_status( $tenant_id, $branch_id, $batch_id, array $data, $correlation_id ) {
 		$new_status = sanitize_key( $data['status'] ?? '' );
 		$reason = sanitize_text_field( $data['reason'] ?? '' );
-		if ( ! in_array( $new_status, array( 'active', 'quarantined', 'expired', 'withdrawn' ), true ) || '' === $reason ) {
+		if ( ! in_array( $new_status, array( 'active', 'quarantined', 'expired', 'withdrawn', 'disposed' ), true ) || '' === $reason ) {
 			return new \WP_Error( 'invalid_disposition', 'A supported batch status and reason are required.', array( 'status' => 422 ) );
 		}
+		$disposal_method=sanitize_key($data['disposal_method'] ?? ''); $disposal_reference=sanitize_text_field($data['disposal_reference'] ?? '');
+		if ('disposed' === $new_status && (!in_array($disposal_method,array('authorized_waste_contractor','return_to_supplier','other'),true) || !$disposal_reference)) { return new \WP_Error('disposal_details_required','Disposal requires a method and reference or handling notes.',array('status'=>422)); }
+		if ('disposed' === $new_status) { $reason .= ' | Disposal: '.$disposal_method.' | Reference: '.$disposal_reference; }
 		$this->db->query( 'START TRANSACTION' );
 		try {
 			$batch = $this->db->get_row( $this->db->prepare( "SELECT id,drug_id,quantity_available,unit_cost_minor,status,expiry_date FROM {$this->p}batches WHERE id=%d AND tenant_id=%d AND branch_id=%d FOR UPDATE", $batch_id, $tenant_id, $branch_id ), ARRAY_A );
-			$transitions = array( 'active' => array( 'quarantined', 'expired', 'withdrawn' ), 'quarantined' => array( 'active', 'expired', 'withdrawn' ), 'expired' => array(), 'withdrawn' => array() );
-			if ( ! $batch || ! in_array( $new_status, $transitions[ $batch['status'] ] ?? array(), true ) || ( 'active' === $new_status && $batch['expiry_date'] <= gmdate( 'Y-m-d' ) ) || ( 'expired' === $new_status && $batch['expiry_date'] > gmdate( 'Y-m-d' ) ) ) { throw new \DomainException( 'invalid_transition' ); }
+			$transitions = array( 'active' => array( 'quarantined', 'expired', 'withdrawn', 'disposed' ), 'quarantined' => array( 'active', 'expired', 'withdrawn', 'disposed' ), 'expired' => array('disposed'), 'withdrawn' => array('disposed'), 'disposed'=>array() );
+			if ( ! $batch || ! in_array( $new_status, $transitions[ $batch['status'] ] ?? array(), true ) || ( 'active' === $new_status && $batch['expiry_date'] <= gmdate( 'Y-m-d' ) ) || ( 'expired' === $new_status && $batch['expiry_date'] > gmdate( 'Y-m-d' ) ) || ('disposed' === $new_status && 'active' === $batch['status'] && $batch['expiry_date'] > gmdate('Y-m-d')) ) { throw new \DomainException( 'invalid_transition' ); }
 			$was_available = 'active' === $batch['status'];
 			$will_be_available = 'active' === $new_status;
 			$available_delta = ( $will_be_available ? 1 : 0 ) * (float) $batch['quantity_available'] - ( $was_available ? 1 : 0 ) * (float) $batch['quantity_available'];
@@ -281,13 +298,13 @@ final class InventoryService {
 			if ( 0.0 !== $available_delta ) {
 				$this->must_update_quantity( 'stock_balances', $available_delta, array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'drug_id' => (int) $batch['drug_id'] ), $now );
 			}
-			$updated = $this->db->update( $this->p . 'batches', array( 'status' => $new_status, 'updated_at' => $now ), array( 'id' => (int) $batch_id, 'tenant_id' => (int) $tenant_id, 'branch_id' => (int) $branch_id ) );
+			$updated = $this->db->update( $this->p . 'batches', array_merge(array( 'status' => $new_status, 'updated_at' => $now ),'disposed' === $new_status ? array('quantity_available'=>0) : array()), array( 'id' => (int) $batch_id, 'tenant_id' => (int) $tenant_id, 'branch_id' => (int) $branch_id ) );
 			if ( false === $updated ) { throw new \RuntimeException( $this->db->last_error ); }
-			$this->must_insert( 'batch_dispositions', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'batch_id' => $batch_id, 'previous_status' => $batch['status'], 'new_status' => $new_status, 'quantity_affected' => abs( $available_delta ), 'reason' => $reason, 'status' => 'completed', 'created_at' => $now, 'created_by' => get_current_user_id() ) );
+			$this->must_insert( 'batch_dispositions', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'batch_id' => $batch_id, 'previous_status' => $batch['status'], 'new_status' => $new_status, 'quantity_affected' => 'disposed' === $new_status ? (float)$batch['quantity_available'] : abs( $available_delta ), 'reason' => $reason, 'status' => 'completed', 'created_at' => $now, 'created_by' => get_current_user_id() ) );
 			$disposition_id = (int) $this->db->insert_id;
 			$this->must_insert( 'stock_movements', array( 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'drug_id' => (int) $batch['drug_id'], 'batch_id' => $batch_id, 'movement_type' => 'active' === $new_status ? 'release' : $new_status, 'quantity_delta' => $available_delta, 'unit_cost_minor' => (int) $batch['unit_cost_minor'], 'reference_type' => 'batch_disposition', 'reference_id' => $disposition_id, 'reason' => $reason, 'correlation_id' => $correlation_id, 'created_at' => $now, 'created_by' => get_current_user_id() ) );
 			$this->db->query( 'COMMIT' );
-			$this->audit( $tenant_id, 'inventory.batch_disposition_changed', 'batch', $batch_id, array( 'branch_id' => $branch_id, 'from' => $batch['status'], 'to' => $new_status, 'reason' => $reason, 'correlation_id' => $correlation_id ) );
+			$this->audit( $tenant_id, 'inventory.batch_disposition_changed', 'batch', $batch_id, array( 'branch_id' => $branch_id, 'from' => $batch['status'], 'to' => $new_status, 'reason' => $reason, 'correlation_id' => $correlation_id, 'disposal_method'=>$disposal_method, 'disposal_reference'=>$disposal_reference ) );
 			return array( 'id' => (int) $batch_id, 'status' => $new_status, 'available_delta' => $available_delta );
 		} catch ( \DomainException $e ) {
 			$this->db->query( 'ROLLBACK' );
@@ -405,7 +422,7 @@ final class InventoryService {
 				break;
 
 			case 'expiry':
-				$rows = $this->db->get_results( $this->db->prepare( "SELECT bt.id,bt.batch_number,bt.expiry_date,bt.quantity_available,bt.unit_cost_minor,d.sku,d.name,s.name supplier_name,DATEDIFF(bt.expiry_date,UTC_DATE()) days_remaining FROM {$this->p}batches bt JOIN {$this->p}drugs d ON d.id=bt.drug_id AND d.tenant_id=bt.tenant_id LEFT JOIN {$this->p}suppliers s ON s.id=bt.supplier_id AND s.tenant_id=bt.tenant_id WHERE bt.tenant_id=%d AND bt.branch_id=%d AND bt.status='active' AND bt.quantity_available>0 ORDER BY bt.expiry_date ASC,bt.id ASC LIMIT %d", $tenant_id, $branch_id, 150 ), ARRAY_A );
+				$rows = $this->db->get_results( $this->db->prepare( "SELECT bt.id,bt.batch_number,bt.expiry_date,bt.status,bt.quantity_available,bt.unit_cost_minor,d.sku,d.name,s.name supplier_name,DATEDIFF(bt.expiry_date,UTC_DATE()) days_remaining FROM {$this->p}batches bt JOIN {$this->p}drugs d ON d.id=bt.drug_id AND d.tenant_id=bt.tenant_id LEFT JOIN {$this->p}suppliers s ON s.id=bt.supplier_id AND s.tenant_id=bt.tenant_id WHERE bt.tenant_id=%d AND bt.branch_id=%d AND bt.status='active' AND bt.quantity_available>0 ORDER BY bt.expiry_date ASC,bt.id ASC LIMIT %d", $tenant_id, $branch_id, 150 ), ARRAY_A );
 				$facts = array( 'batches' => count( $rows ), 'within_180_days' => count( array_filter( $rows, static fn( $row ) => (int) $row['days_remaining'] <= 180 ) ), 'stock_value_minor' => array_sum( array_map( static fn( $row ) => (float) $row['quantity_available'] * (int) $row['unit_cost_minor'], $rows ) ) );
 				break;
 

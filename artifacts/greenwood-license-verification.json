@@ -1,0 +1,276 @@
+﻿{
+    "mode":  "live database; read-only session; existing Greenwood owner permissions; rate-counter writes excluded",
+    "site_id":  3,
+    "tenant_id":  1,
+    "branch_id":  1,
+    "pharmacy":  "Greenwoood Pharmacy",
+    "licence":  {
+                    "status":  "grace",
+                    "expires_at":  "2026-10-11 08:52:02",
+                    "grace_until":  "2026-10-18 08:52:02"
+                },
+    "workspaces":  [
+                       {
+                           "route":  "/app/overview",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "metrics",
+                                                   "movements",
+                                                   "signals"
+                                               ]
+                       },
+                       {
+                           "route":  "/inventory/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "view",
+                                                   "summary",
+                                                   "rows",
+                                                   "facts",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/pos/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "session",
+                                                   "tills",
+                                                   "open_sessions",
+                                                   "products",
+                                                   "holds",
+                                                   "recent_sales",
+                                                   "prescription_payments",
+                                                   "metrics",
+                                                   "pricing",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/clinical/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "metrics",
+                                                   "patients",
+                                                   "prescriptions",
+                                                   "recent_dispensings",
+                                                   "drugs",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/claims/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "metrics",
+                                                   "claims",
+                                                   "ready_sales",
+                                                   "insurers",
+                                                   "remittances",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/reports/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "dashboard",
+                                                   "report",
+                                                   "schedules",
+                                                   "runs",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/offline/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "metrics",
+                                                   "counts",
+                                                   "oldest_pending_at",
+                                                   "mutations",
+                                                   "devices",
+                                                   "security_alerts",
+                                                   "permissions"
+                                               ]
+                       },
+                       {
+                           "route":  "/accounts/workspace",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "scope",
+                                                   "members",
+                                                   "branches",
+                                                   "roles",
+                                                   "metrics"
+                                               ]
+                       },
+                       {
+                           "route":  "/app/notifications",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "items",
+                                                   "branch_id"
+                                               ]
+                       },
+                       {
+                           "route":  "/license",
+                           "status":  200,
+                           "response_fields":  [
+                                                   "id",
+                                                   "tenant_id",
+                                                   "plan_id",
+                                                   "status",
+                                                   "licence_key",
+                                                   "activated_at",
+                                                   "expires_at",
+                                                   "grace_period_days",
+                                                   "revocation_reason",
+                                                   "revoked_at",
+                                                   "created_at",
+                                                   "updated_at",
+                                                   "plan_name",
+                                                   "plan_tier",
+                                                   "grace_until",
+                                                   "entitlements",
+                                                   "quotas",
+                                                   "cache_expires_at"
+                                               ]
+                       }
+                   ],
+    "api_url":  "https://pharmasure.wasmer.app/greenwoood-pharmacy/wp-json/pharmasure/v1/",
+    "boot_read_errors":  [
+
+                         ],
+    "licence_entitlements":  [
+                                 "inventory",
+                                 "multi_branch",
+                                 "pos",
+                                 "clinical",
+                                 "claims",
+                                 "reporting",
+                                 "accounts",
+                                 "offline"
+                             ],
+    "provider_columns":  {
+                             "prescriptions":  true,
+                             "claims":  true
+                         },
+    "unauthorized_branch_selection_rejected":  true,
+    "posted_scope_override_ignored":  true,
+    "role_checks":  [
+                        {
+                            "role":  "manager",
+                            "route":  "/app/overview",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/pos/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/inventory/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/clinical/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/claims/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/reports/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/offline/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "manager",
+                            "route":  "/accounts/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/app/overview",
+                            "status":  403,
+                            "expected":  403
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/pos/workspace",
+                            "status":  403,
+                            "expected":  403
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/inventory/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/clinical/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/claims/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/reports/workspace",
+                            "status":  200,
+                            "expected":  200
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/offline/workspace",
+                            "status":  403,
+                            "expected":  403
+                        },
+                        {
+                            "role":  "pharmacist",
+                            "route":  "/accounts/workspace",
+                            "status":  403,
+                            "expected":  403
+                        }
+                    ],
+    "anonymous_denials":  {
+                              "/pos/workspace":  403,
+                              "/clinical/workspace":  403,
+                              "/accounts/workspace":  403,
+                              "/license":  401,
+                              "/tenants":  401
+                          },
+    "failures":  0,
+    "verified_at_utc":  "2026-10-12T14:39:47.973Z",
+    "deployed_version":  "v17"
+}

@@ -41,6 +41,7 @@ class Plugin {
             // Tenant management
             'pharmasure_manage_tenant' => 'Manage tenant settings',
             'pharmasure_manage_branches' => 'Manage branches',
+            'pharmasure_manage_sig' => 'Manage SIG terminology and templates',
             'pharmasure_manage_users' => 'Manage users and roles',
             
             // Inventory
@@ -63,6 +64,7 @@ class Plugin {
             // POS
             'pharmasure_access_pos' => 'Access point of sale',
             'pharmasure_manage_tills' => 'Manage till sessions',
+            'pharmasure_manage_pos_sessions' => 'Close other cashiers’ branch sessions',
             'pharmasure_apply_pos_discounts' => 'Apply point-of-sale discounts',
             'pharmasure_refund_sales' => 'Refund completed sales',
             'pharmasure_void_sales' => 'Void completed sales',
@@ -95,7 +97,7 @@ class Plugin {
 		$role_caps = [
 			'pharmasure_owner' => array_keys( $capabilities ),
 			'pharmasure_manager' => array_keys( $capabilities ),
-			'pharmasure_pharmacist' => [ 'pharmasure_view_inventory','pharmasure_view_patients','pharmasure_manage_patients','pharmasure_view_prescriptions','pharmasure_manage_prescriptions','pharmasure_review_prescriptions','pharmasure_dispense_medications','pharmasure_print_documents','pharmasure_manage_claims','pharmasure_prepare_claims','pharmasure_submit_claims','pharmasure_view_reports' ],
+			'pharmasure_pharmacist' => [ 'pharmasure_view_inventory','pharmasure_view_patients','pharmasure_manage_patients','pharmasure_view_prescriptions','pharmasure_manage_prescriptions','pharmasure_review_prescriptions','pharmasure_manage_sig','pharmasure_dispense_medications','pharmasure_print_documents','pharmasure_manage_claims','pharmasure_prepare_claims','pharmasure_submit_claims','pharmasure_view_reports' ],
 			'pharmasure_cashier' => [ 'pharmasure_view_inventory','pharmasure_access_pos','pharmasure_manage_tills','pharmasure_print_documents' ],
 			'pharmasure_inventory_clerk' => [ 'pharmasure_view_inventory','pharmasure_manage_inventory','pharmasure_manage_stock','pharmasure_view_reports','pharmasure_export_data' ],
 			'pharmasure_auditor' => [ 'pharmasure_view_inventory','pharmasure_view_reports','pharmasure_export_data','pharmasure_view_audit_log' ],

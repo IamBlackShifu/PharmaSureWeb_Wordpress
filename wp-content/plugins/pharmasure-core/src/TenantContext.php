@@ -144,25 +144,8 @@ class TenantContext {
             return;
         }
 
-        global $wpdb;
-        $table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'licences';
-        
-        $licence = $wpdb->get_row( $wpdb->prepare(
-            "SELECT * FROM $table WHERE tenant_id = %d AND status IN ('active', 'trial', 'grace') ORDER BY updated_at DESC LIMIT 1",
-            $this->tenant_id
-        ), ARRAY_A );
-
-        if ( $licence ) {
-            $this->licence_snapshot = $licence;
-            
-            // Load entitlements
-            $ent_table = $wpdb->prefix . PHARMASURE_TABLE_PREFIX . 'licence_entitlements';
-            $entitlements = $wpdb->get_col( $wpdb->prepare(
-                "SELECT entitlement_key FROM $ent_table WHERE licence_id = %d",
-                $licence['id']
-            ) );
-            $this->licence_snapshot['entitlements'] = $entitlements ?? [];
-        }
+        $licence = ( new LicenseManager( $this->tenant_id ) )->validate_license();
+        $this->licence_snapshot = is_wp_error( $licence ) ? array() : $licence;
     }
 
     /**

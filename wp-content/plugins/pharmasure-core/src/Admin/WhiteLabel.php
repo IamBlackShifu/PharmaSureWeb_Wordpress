@@ -6,6 +6,13 @@ use PharmaSure\Core\TenantContext;
 /** Keep WordPress as platform infrastructure while presenting a tenant product UI. */
 final class WhiteLabel {
 	public static function register() {
+		add_action( 'wp_head', array( self::class, 'brand_icons' ), 100 );
+		add_action( 'login_head', array( self::class, 'brand_icons' ), 100 );
+		add_action( 'admin_head', array( self::class, 'brand_icons' ), 100 );
+		add_filter( 'login_url', array( self::class, 'canonical_login_url' ), 10, 3 );
+		add_filter( 'logout_url', array( self::class, 'canonical_logout_url' ), 10, 2 );
+		add_filter( 'logout_redirect', array( self::class, 'logout_redirect' ) );
+		add_filter( 'login_redirect', array( self::class, 'platform_login_redirect' ), 20, 3 );
 		add_action( 'admin_menu', array( self::class, 'register_account_page' ), 30 );
 		add_action( 'admin_menu', array( self::class, 'reduce_menu' ), PHP_INT_MAX );
 		add_action( 'admin_bar_menu', array( self::class, 'reduce_toolbar' ), PHP_INT_MAX );
@@ -123,10 +130,45 @@ final class WhiteLabel {
 	}
 
 	public static function login_styles() {
-		wp_enqueue_style( 'pharmasure-login', PHARMASURE_CORE_URL . 'assets/css/login.css', array(), PHARMASURE_CORE_VERSION );
+		wp_enqueue_style( 'pharmasure-login', PHARMASURE_CORE_URL . 'assets/css/login.css', array(), filemtime( PHARMASURE_CORE_PATH . 'assets/css/login.css' ) );
 	}
 
-	public static function login_url() { return network_home_url( '/app' ); }
+	public static function brand_icons() {
+		$base = PHARMASURE_CORE_URL . 'assets/brand/';
+		echo '<link rel="icon" type="image/svg+xml" href="' . esc_url( $base . 'pharmasure-mark.svg' ) . '">';
+		echo '<link rel="icon" type="image/png" sizes="32x32" href="' . esc_url( $base . 'favicon-32.png' ) . '">';
+		echo '<link rel="apple-touch-icon" sizes="180x180" href="' . esc_url( $base . 'apple-touch-icon.png' ) . '">';
+		echo '<link rel="shortcut icon" href="' . esc_url( $base . 'favicon.ico' ) . '">';
+	}
+
+	/** Use the physical network login endpoint for subdirectory pharmacies. */
+	public static function canonical_login_url( $url, $redirect = '', $force_reauth = false ) {
+		$url = network_site_url( 'wp-login.php', 'login' );
+		if ( $redirect ) { $url = add_query_arg( 'redirect_to', $redirect, $url ); }
+		if ( $force_reauth ) { $url = add_query_arg( 'reauth', '1', $url ); }
+		return $url;
+	}
+
+	public static function canonical_logout_url( $url, $redirect = '' ) {
+		// Preserve WordPress's nonce and query parameters; change only the endpoint.
+		$query = wp_parse_url( html_entity_decode( $url, ENT_QUOTES, 'UTF-8' ), PHP_URL_QUERY );
+		return network_site_url( 'wp-login.php', 'login' ) . ( $query ? '?' . $query : '' );
+	}
+
+	public static function logout_redirect( $redirect ) {
+		return add_query_arg( 'logged_out', 'true', self::canonical_login_url( '', network_home_url( '/app/' ) ) );
+	}
+
+	public static function platform_login_redirect( $redirect, $requested, $user ) {
+		if ( ! is_multisite() || ! $user instanceof \WP_User || ! is_super_admin( $user->ID ) ) { return $redirect; }
+		$path = untrailingslashit( (string) wp_parse_url( $requested ?: $redirect, PHP_URL_PATH ) );
+		if ( ! $requested || in_array( $path, array( '/app', '/app/platform', '/wp-admin', '/wp-admin/network' ), true ) ) {
+			return network_admin_url( 'admin.php?page=pharmasure-admin' );
+		}
+		return $redirect;
+	}
+
+	public static function login_url() { return network_home_url( '/' ); }
 	public static function login_document_title( $title, $login_title ) { return $login_title . ' | PharmaSure'; }
 	public static function login_body_class( $classes ) { $classes[] = 'pharmasure-login'; return $classes; }
 	public static function login_message( $message ) { if ( $message ) { return $message; } return '<div class="ps-login-intro"><span>PHARMACY OPERATIONS</span><strong>Secure workspace access</strong><p>Sign in with the account issued by your pharmacy administrator.</p></div>'; }

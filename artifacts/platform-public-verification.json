@@ -1,0 +1,37 @@
+{
+  "verified_at_utc": "2026-10-12T18:49:36.580Z",
+  "results": [
+    {
+      "page": "pharmasure-admin",
+      "status": 302,
+      "requires_login": true
+    },
+    {
+      "page": "pharmasure-tenants",
+      "status": 302,
+      "requires_login": true
+    },
+    {
+      "page": "pharmasure-licenses",
+      "status": 302,
+      "requires_login": true
+    },
+    {
+      "page": "pharmasure-add-tenant",
+      "status": 302,
+      "requires_login": true
+    },
+    {
+      "asset": "wp-content/plugins/pharmasure-core/assets/js/app.js",
+      "matches_release": true
+    },
+    {
+      "asset": "wp-content/plugins/pharmasure-core/assets/css/crisp-theme.css",
+      "matches_release": true
+    },
+    {
+      "asset": "wp-content/plugins/pharmasure-tenancy/assets/css/platform-admin.css",
+      "matches_release": true
+    }
+  ]
+}

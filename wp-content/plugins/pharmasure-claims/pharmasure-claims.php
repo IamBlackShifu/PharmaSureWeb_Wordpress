@@ -12,7 +12,7 @@ namespace PharmaSure\Claims;
 
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 const VERSION = '1.1.0';
-const DB_VERSION = '1';
+const DB_VERSION = '2';
 
 spl_autoload_register( static function ( $class ) {
 	$prefix = __NAMESPACE__ . '\\';
@@ -26,6 +26,6 @@ register_activation_hook( __FILE__, array( Installer::class, 'install' ) );
 
 add_action( 'plugins_loaded', static function () {
 	if ( ! class_exists( 'PharmaSure\Core\TenantContext' ) ) { return; }
-	if ( DB_VERSION !== get_site_option( 'pharmasure_claims_db_version' ) ) { Installer::install(); }
+	if ( DB_VERSION !== get_option( 'pharmasure_claims_site_db_version' ) ) { Installer::install(); global $wpdb; if(in_array('ahfoz_provider_number',$wpdb->get_col("SHOW COLUMNS FROM {$wpdb->prefix}ps_claims",0),true)){update_option('pharmasure_claims_site_db_version',DB_VERSION,false);} }
 	add_action( 'rest_api_init', array( Rest\ClaimsController::class, 'register_routes' ) );
 }, 40 );

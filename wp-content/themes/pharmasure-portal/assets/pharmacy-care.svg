@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="580" height="600" viewBox="0 0 580 600" fill="none">
+<defs>
+<linearGradient id="bottle" x1="176" y1="185" x2="401" y2="450" gradientUnits="userSpaceOnUse"><stop stop-color="#fffef5"/><stop offset=".55" stop-color="#eceee0"/><stop offset="1" stop-color="#b8c5e6"/></linearGradient>
+<linearGradient id="cap" x1="173" y1="129" x2="387" y2="203" gradientUnits="userSpaceOnUse"><stop stop-color="#8492af"/><stop offset="1" stop-color="#2738b5"/></linearGradient>
+<linearGradient id="box" x1="370" y1="278" x2="485" y2="506" gradientUnits="userSpaceOnUse"><stop stop-color="#faf9ef"/><stop offset="1" stop-color="#dce3f5"/></linearGradient>
+<linearGradient id="pill" x1="67" y1="418" x2="203" y2="491" gradientUnits="userSpaceOnUse"><stop stop-color="#e6b48f"/><stop offset="1" stop-color="#ba745b"/></linearGradient>
+<filter id="shadow" x="0" y="0" width="580" height="600" filterUnits="userSpaceOnUse"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#172554" flood-opacity=".3"/></filter>
+</defs>
+<ellipse cx="289" cy="520" rx="203" ry="32" fill="#172554" opacity=".5"/>
+<g filter="url(#shadow)">
+<path d="M358 275l93-17 57 26-91 18z" fill="#fffef3"/><path d="M417 302l91-18v210l-91 24z" fill="#8492af"/><path d="M358 275l59 27v216l-59-29z" fill="url(#box)"/>
+<path d="M358 362l59 27v59l-59-28z" fill="#172554"/><path d="M417 389l91-22v59l-91 22z" fill="#172554"/>
+<path d="M452 406l24-6M464 391v22" stroke="#dce3f5" stroke-width="5" stroke-linecap="round"/>
+<path d="M210 165h139v40c0 15 43 26 43 64v184c0 41-215 41-215 0V269c0-38 33-49 33-64z" fill="url(#bottle)"/>
+<ellipse cx="281" cy="165" rx="105" ry="23" fill="#8492af"/>
+<path d="M176 137c0-33 210-33 210 0v45c0 29-210 29-210 0z" fill="url(#cap)"/>
+<ellipse cx="281" cy="137" rx="105" ry="23" fill="#b8c5e6"/>
+<path d="M190 142v42m12-39v42m13-39v43m14-41v43m14-40v43m15-40v42m15-39v42m16-40v41m16-43v42m15-43v41m15-45v43m14-45v41m13-45v41m13-47v41" stroke="#dce3f5" stroke-opacity=".26" stroke-width="3"/>
+<path d="M183 281c48 13 152 14 203 0v139c-55 18-155 18-203 0z" fill="#fcfbef"/>
+<path d="M183 281c48 13 152 14 203 0v35c-55 17-155 17-203 0z" fill="#172554"/>
+<text x="281" y="308" text-anchor="middle" fill="#eef1fb" font-family="Arial,sans-serif" font-size="15" letter-spacing="3">PHARMASURE</text>
+<path d="M270 338h21v19h19v21h-19v19h-21v-19h-19v-21h19z" fill="#2738b5"/>
+<path d="M217 410h131" stroke="#b8c5e6" stroke-width="3" stroke-linecap="round"/>
+<g transform="rotate(-28 142 455)"><rect x="65" y="427" width="154" height="55" rx="27.5" fill="url(#pill)"/><path d="M142 427h50c36 0 36 55 0 55h-50z" fill="#f7eee0"/><path d="M142 429v51" stroke="#af9d86" stroke-opacity=".45" stroke-width="2"/><path d="M91 436h35" stroke="#fff" stroke-opacity=".4" stroke-width="5" stroke-linecap="round"/></g>
+<ellipse cx="334" cy="504" rx="28" ry="13" transform="rotate(-12 334 504)" fill="#e3d5b8"/><path d="M312 508l42-9" stroke="#baaa8b" stroke-width="2"/>
+</g>
+<circle cx="104" cy="277" r="5" fill="#dce3f5" opacity=".7"/><circle cx="445" cy="150" r="4" fill="#dce3f5" opacity=".4"/>
+</svg>

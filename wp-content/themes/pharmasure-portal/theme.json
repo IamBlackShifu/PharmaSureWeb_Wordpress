@@ -7,10 +7,10 @@
     "color": {
       "defaultPalette": false,
       "palette": [
-        { "slug": "ink", "name": "Ink", "color": "#0f3748" },
-        { "slug": "primary", "name": "PharmaSure Teal", "color": "#087f8c" },
+        { "slug": "ink", "name": "Ink", "color": "#172554" },
+        { "slug": "primary", "name": "PharmaSure Blue", "color": "#3347d9" },
         { "slug": "accent", "name": "Clinical Green", "color": "#20a46b" },
-        { "slug": "mist", "name": "Mist", "color": "#edf7f6" },
+        { "slug": "mist", "name": "Mist", "color": "#eef1ff" },
         { "slug": "white", "name": "White", "color": "#ffffff" }
       ]
     },

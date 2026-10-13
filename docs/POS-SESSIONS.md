@@ -1,0 +1,19 @@
+# Branch cashier sessions
+
+POS now shows the current branch's open till sessions and cashier names. **Open sessions** opens a fresh server-backed list with refresh, resume, close, and create-till actions. When all tills are occupied, the opening dialog links to this list and offers **Create another till** to users with the existing till-management permission.
+
+Each cashier uses one open session per branch, on a separate till with its own opening float and cash reconciliation. Multiple cashiers can sell concurrently in one branch; inventory and receipt sequencing continue through the existing transactional checkout service. A shared physical drawer is not split automatically into multiple cashier ledgers. Configure separate accountable cashier tills and count their actual floats.
+
+Till sessions belong to the authenticated user and branch, independently of browser login. Logging out does not close the cash ledger. Signing in elsewhere retrieves the same open session automatically. **Resume my session** continues it; **Close and open a new session** records the cash count, closes the old ledger, and opens the normal till-selection dialog. This action does not revoke browser login tokens. An older login cannot check out against a closed session because checkout locks and validates session ownership/status server-side. Refreshing a POS workspace after the session changes clears the previous unsold cart and tenders.
+
+Cashiers may close their own sessions from any authenticated login. `pharmasure_manage_pos_sessions` allows owners/managers to close another cashier's session within their authorized branch. Manager closure requires a reason and physical cash count. Original cashier attribution remains intact; new `closed_by` and `closing_reason` columns and the existing audit trail identify the closing actor. Cash differences remain subject to the existing variance-approval workflow. Till-management permission alone does not grant permission to close another user's session.
+
+POS schema version 8 adds the closure fields. Migration markers are checked per tenant site as well as through the existing network version. Old session rows remain valid. Opening sessions takes a branch row lock before checking till occupancy and cashier ownership, preventing simultaneous logins from creating duplicate sessions on different tills. This short lock applies only to opening sessions; checkout retains its existing stock, till and receipt locks.
+
+Held carts retain their existing ownership/session association. Complete or cancel outstanding held sales before ending a shift; this update does not transfer them between cashier ledgers.
+
+## Validation
+
+`php scripts/test-pos-sessions.php` runs 27 standalone service checks covering two branch cashiers, occupied tills, duplicate cashier sessions, isolation, permissions, manager closures, reconciliation, attribution and rollback. These use a simulated WordPress/database boundary. `scripts/test-pos.php` also includes real database session discovery and multi-cashier assertions for execution in a disposable WordPress development database.
+
+For online acceptance, use two cashier accounts in separate browser profiles on the same branch. Create two tills, open each with its actual float, and make independent sales. Sign the first cashier in through a third browser profile and verify that their original session appears. Close it with the physical cash count, open a new session, and verify that the old session ID cannot accept checkout. Verify that cashier two can continue selling throughout. Use a manager account to test reason-required closure and confirm audit/variance records. Real database concurrency and authenticated browser acceptance remain necessary; the standalone harness does not simulate real transaction scheduling.

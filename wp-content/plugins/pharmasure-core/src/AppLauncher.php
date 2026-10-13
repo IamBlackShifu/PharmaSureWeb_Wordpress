@@ -12,7 +12,8 @@ final class AppLauncher {
 
 	/** Move a root /app request into the authenticated user's tenant site. */
 	public static function bootstrap_context() {
-		if ( ! self::is_app_request() || ! is_multisite() || ! is_user_logged_in() ) {
+		if ( self::platform_entry_url() ) { return; }
+		if ( ! self::is_app_request() || ! is_multisite() || ! is_user_logged_in() || is_super_admin() ) {
 			return;
 		}
 
@@ -62,6 +63,8 @@ final class AppLauncher {
 		if ( ! is_user_logged_in() ) {
 			auth_redirect();
 		}
+		$platform_url = self::platform_entry_url();
+		if ( $platform_url ) { wp_safe_redirect( $platform_url ); exit; }
 		if ( ! current_user_can( 'pharmasure_view_inventory' ) ) {
 			wp_die( esc_html__( 'Pharmacy workspace access is required.', 'pharmasure-core' ), 403 );
 		}
@@ -90,6 +93,13 @@ final class AppLauncher {
 	}
 
 	/** Keep pharmacy staff in the product surface while retaining wp-admin for platform administration. */
+	public static function platform_entry_url() {
+		if ( ! is_multisite() || ! is_user_logged_in() || ! is_super_admin() || ! current_user_can( 'manage_network_options' ) ) { return null; }
+		$path = untrailingslashit( (string) wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ) );
+		if ( ! in_array( $path, array( '/app', '/app/platform' ), true ) ) { return null; }
+		return network_admin_url( 'admin.php?page=pharmasure-admin' );
+	}
+
 	public static function redirect_staff_admin() {
 		if ( wp_doing_ajax() || ! is_user_logged_in() || is_super_admin() ) {
 			return;
@@ -111,6 +121,10 @@ final class AppLauncher {
 	}
 
 	public static function register_rest_routes() {
+		register_rest_route('pharmasure/v1','/app/preferences/text-size',array('methods'=>\WP_REST_Server::CREATABLE,'callback'=>array(self::class,'save_text_size'),'permission_callback'=>array(self::class,'can_view')));
+		register_rest_route('pharmasure/v1','/app/provider',array('methods'=>\WP_REST_Server::CREATABLE,'callback'=>array(self::class,'save_provider'),'permission_callback'=>static fn()=>current_user_can('pharmasure_manage_tenant')));
+		register_rest_route('pharmasure/v1','/app/pricing/markup',array('methods'=>\WP_REST_Server::CREATABLE,'callback'=>array(self::class,'save_markup'),'permission_callback'=>static fn()=>current_user_can('pharmasure_manage_tenant')));
+		register_rest_route('pharmasure/v1','/app/notifications',array('methods'=>\WP_REST_Server::READABLE,'callback'=>array(self::class,'notifications'),'permission_callback'=>array(self::class,'can_view')));
 		register_rest_route(
 			'pharmasure/v1',
 			'/app/overview',
@@ -150,6 +164,89 @@ final class AppLauncher {
 		);
 	}
 
+
+	/** Server-derived visibility; never accept roles or capabilities from the client. */
+	public static function inventory_views() {
+		if (current_user_can('pharmasure_manage_stock') || current_user_can('pharmasure_view_audit_log')) { return array('catalogue','batches','receipts','movements','low-stock','expiry','suppliers'); }
+		return array('catalogue');
+	}
+
+	public static function workspace_permissions() {
+		$modules = array('overview'=>'pharmasure_manage_stock','pos'=>'pharmasure_access_pos','inventory'=>'pharmasure_view_inventory','clinical'=>'pharmasure_view_prescriptions','claims'=>'pharmasure_prepare_claims','reports'=>'pharmasure_view_reports','offline'=>'pharmasure_view_offline_operations','account'=>'pharmasure_manage_users');
+		$result = array();
+		foreach ($modules as $module=>$cap) { $result[$module] = current_user_can($cap); }
+		$result['manage_stock'] = current_user_can('pharmasure_manage_stock');
+		$result['manage_inventory'] = current_user_can('pharmasure_manage_inventory');
+		$result['manage_tenant'] = current_user_can('pharmasure_manage_tenant');
+		return $result;
+	}
+
+	public static function save_text_size( \WP_REST_Request $request ) {
+		$size = sanitize_key((string) $request->get_param('text_size'));
+		if (!in_array($size,array('standard','large','extra-large'),true)) { return new \WP_Error('invalid_text_size','Choose standard, large or extra-large text.',array('status'=>422)); }
+		$user = get_current_user_id();
+		if (!$user) { return new \WP_Error('forbidden','Sign in to save preferences.',array('status'=>403)); }
+		if (get_user_meta($user,'pharmasure_text_size',true) !== $size && false === update_user_meta($user,'pharmasure_text_size',$size)) { return new \WP_Error('preference_not_saved','Text size could not be saved.',array('status'=>500)); }
+		return rest_ensure_response(array('text_size'=>$size));
+	}
+
+	public static function save_provider( \WP_REST_Request $request ) {
+		$tenant=(int)TenantContext::instance()->get_tenant_id();
+		if (!$tenant || !current_user_can('pharmasure_manage_tenant')) { return new \WP_Error('forbidden','Pharmacy settings permission is required.',array('status'=>403)); }
+		$value=trim(sanitize_text_field($request->get_param('ahfoz_provider_number') ?? ''));
+		if (strlen($value)>100) { return new \WP_Error('invalid_provider_number','Provider number must be at most 100 characters.',array('status'=>422)); }
+		$key='pharmasure_ahfoz_provider_'.$tenant;
+		if (get_option($key,'')!==$value && !update_option($key,$value,false)) { return new \WP_Error('provider_not_saved','Provider number could not be saved.',array('status'=>500)); }
+		do_action('pharmasure_audit_log',array('tenant_id'=>$tenant,'actor_id'=>get_current_user_id(),'action'=>'claims.provider_updated','object_type'=>'tenant','object_id'=>$tenant,'status'=>'success'));
+		return rest_ensure_response(array('ahfoz_provider_number'=>$value));
+	}
+
+	public static function save_markup( \WP_REST_Request $request ) {
+		$context = TenantContext::instance(); $tenant = (int)$context->get_tenant_id();
+		$value = $request->get_param('markup_percent');
+		if (!$tenant || !current_user_can('pharmasure_manage_tenant')) { return new \WP_Error('forbidden','Pharmacy settings permission is required.',array('status'=>403)); }
+		if (!is_numeric($value) || !is_finite((float)$value) || (float)$value<0 || (float)$value>1000) { return new \WP_Error('invalid_markup','Markup must be between 0 and 1000 percent.',array('status'=>422)); }
+		$key='pharmasure_receiving_markup_'.$tenant; $value=round((float)$value,2);
+		if (get_option($key,null) !== $value && !update_option($key,$value,false)) { return new \WP_Error('markup_not_saved','Markup could not be saved.',array('status'=>500)); }
+		do_action('pharmasure_audit_log',array('tenant_id'=>$tenant,'actor_id'=>get_current_user_id(),'action'=>'inventory.markup_updated','object_type'=>'tenant','object_id'=>$tenant,'status'=>'success','details'=>array('markup_percent'=>$value)));
+		return rest_ensure_response(array('markup_percent'=>$value));
+	}
+
+	/** Live, actionable branch queue, filtered before any data leaves the server. */
+	public static function notifications() {
+		$context=TenantContext::instance(); $tenant=(int)$context->get_tenant_id(); $branch=(int)$context->get_branch_id();
+		if (!$tenant || !$branch) { return new \WP_Error('branch_context_required','Select an authorized working branch.',array('status'=>403)); }
+		global $wpdb; $p=$wpdb->prefix.'ps_'; $items=array();
+		$exists=static fn($table)=>$wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s',$p.$table)) === $p.$table;
+		if (current_user_can('pharmasure_review_prescriptions') && $exists('prescriptions')) {
+			$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}prescriptions WHERE tenant_id=%d AND branch_id=%d AND status='pending_review'",$tenant,$branch));
+			if ($count) { $items[]=array('id'=>'review','route'=>'clinical','filter'=>'pending_review','label'=>"{$count} prescriptions need pharmacist review",'count'=>$count); }
+		}
+		if (current_user_can('pharmasure_dispense_medications') && $exists('prescriptions')) {
+			$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}prescriptions WHERE tenant_id=%d AND branch_id=%d AND status='approved'",$tenant,$branch));
+			if ($count) { $items[]=array('id'=>'dispense','route'=>'clinical','filter'=>'approved','label'=>"{$count} approved prescriptions ready to dispense",'count'=>$count); }
+		}
+		if (current_user_can('pharmasure_access_pos') && class_exists('\\PharmaSure\\POS\\Services\\PosService')) {
+			$queue=(new \PharmaSure\POS\Services\PosService())->prescription_payments($tenant,$branch);
+			if ($queue) { $items[]=array('id'=>'rx-payments','route'=>'pos','label'=>count($queue).' dispensed prescriptions ready for payment','count'=>count($queue)); }
+		}
+		if (current_user_can('pharmasure_manage_stock') && $exists('batches')) {
+			$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}batches WHERE tenant_id=%d AND branch_id=%d AND quantity_available>0 AND status='active' AND expiry_date<=DATE_ADD(UTC_DATE(),INTERVAL 90 DAY)",$tenant,$branch));
+			if ($count) { $items[]=array('id'=>'expiry','route'=>'inventory','view'=>'expiry','label'=>"{$count} expired or expiring batches need action",'count'=>$count); }
+			$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}batches WHERE tenant_id=%d AND branch_id=%d AND quantity_available>0 AND status IN ('expired','withdrawn')",$tenant,$branch));
+			if ($count) { $items[]=array('id'=>'disposal','route'=>'inventory','view'=>'batches','label'=>"{$count} removed batches await disposal",'count'=>$count); }
+			if ($exists('stock_transfers')) {
+				$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}stock_transfers WHERE tenant_id=%d AND to_branch_id=%d AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 DAY)",$tenant,$branch));
+				if ($count) { $items[]=array('id'=>'transfers','route'=>'inventory','view'=>'movements','label'=>"{$count} stock transfers received in the last day",'count'=>$count); }
+			}
+		}
+		if(current_user_can('pharmasure_prepare_claims') && $exists('claims')) {
+			$count=(int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$p}claims WHERE tenant_id=%d AND branch_id=%d AND status IN ('draft','queried','rejected')",$tenant,$branch));
+			if($count){$items[]=array('id'=>'claims','route'=>'claims','label'=>"{$count} claims need attention",'count'=>$count);}
+		}
+		return rest_ensure_response(array('items'=>$items,'branch_id'=>$branch));
+	}
+
 	public static function can_view() {
 		return current_user_can( 'pharmasure_view_inventory' )
 			? true
@@ -157,12 +254,15 @@ final class AppLauncher {
 	}
 
 	public static function overview() {
+		if (!current_user_can('pharmasure_manage_stock')) { return new \WP_Error('forbidden','Stock management permission is required for this overview.',array('status'=>403)); }
 		$context   = TenantContext::instance();
 		$tenant_id = (int) $context->get_tenant_id();
 		$branch_id = (int) $context->get_branch_id();
 		if ( ! $tenant_id || ! $branch_id ) {
 			return new \WP_Error( 'branch_context_required', 'Select an authorized working branch.', array( 'status' => 400 ) );
 		}
+		$licence = ( new LicenseManager( $tenant_id ) )->enforce_entitlement( 'inventory' );
+		if ( is_wp_error( $licence ) ) { return $licence; }
 
 		global $wpdb;
 		$p = $wpdb->prefix . PHARMASURE_TABLE_PREFIX;
@@ -268,8 +368,16 @@ final class AppLauncher {
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'appUrl'      => untrailingslashit( network_home_url( '/app' ) ),
 			'logoutUrl'   => html_entity_decode( wp_logout_url( network_home_url( '/wp-login.php?logged_out=true' ) ), ENT_QUOTES, 'UTF-8' ),
+			'brandMarkUrl' => PHARMASURE_CORE_URL . 'assets/brand/pharmasure-mark.svg',
 			'route'       => $route_path,
 			'theme'       => $theme,
+			'textSize' => in_array(get_user_meta($user->ID,'pharmasure_text_size',true),array('standard','large','extra-large'),true) ? get_user_meta($user->ID,'pharmasure_text_size',true) : 'standard',
+			'permissions' => self::workspace_permissions(),
+			'platformAdminUrl' => is_multisite() && is_super_admin() && current_user_can( 'manage_network_options' ) ? network_admin_url( 'admin.php?page=pharmasure-admin' ) : null,
+			'licence' => ( new LicenseManager( $tenant_id ) )->summary(),
+			'inventoryViews' => self::inventory_views(),
+			'markupPercent' => get_option('pharmasure_receiving_markup_'.$tenant_id,null),
+			'ahfozProviderNumber' => get_option('pharmasure_ahfoz_provider_'.$tenant_id,''),
 			'activeBranch'=> $branch_id,
 			'branches'    => $branches,
 			'currentUser' => array(

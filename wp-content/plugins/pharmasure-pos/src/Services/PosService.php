@@ -24,6 +24,9 @@ final class PosService {
 	public function open_session( $tenant_id, $branch_id, $till_id, $cashier_id, $opening_float_minor ) {
 		if ( $opening_float_minor < 0 ) { return new \WP_Error( 'invalid_till', 'An active branch till and non-negative opening float are required.', array( 'status' => 422 ) ); }
 		$this->db->query( 'START TRANSACTION' );
+		// Serialize opens in this branch, including simultaneous logins of one cashier on different tills.
+		$branch = $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}branches WHERE id=%d AND tenant_id=%d AND is_active=1 FOR UPDATE", $branch_id, $tenant_id ) );
+		if ( ! $branch ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'invalid_pos_scope', 'An authorized active branch is required.', array( 'status' => 403 ) ); }
 		$till = $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}tills WHERE id=%d AND tenant_id=%d AND branch_id=%d AND status='active' FOR UPDATE", $till_id, $tenant_id, $branch_id ) );
 		if ( ! $till ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'invalid_till', 'An active branch till and non-negative opening float are required.', array( 'status' => 422 ) ); }
 		$open = $this->db->get_var( $this->db->prepare( "SELECT id FROM {$this->p}till_sessions WHERE tenant_id=%d AND branch_id=%d AND till_id=%d AND status='open' LIMIT 1", $tenant_id, $branch_id, $till_id ) );
@@ -37,19 +40,23 @@ final class PosService {
 		return array( 'id' => $id );
 	}
 
-	public function close_session( $tenant_id, $branch_id, $session_id, $cashier_id, $counted_cash_minor ) {
+	public function close_session( $tenant_id, $branch_id, $session_id, $cashier_id, $counted_cash_minor, $can_manage_other = false, $closing_reason = '' ) {
 		if ( $counted_cash_minor < 0 ) { return new \WP_Error( 'invalid_cash_count', 'Counted cash cannot be negative.', array( 'status' => 422 ) ); }
 		$this->db->query( 'START TRANSACTION' );
-		$session = $this->db->get_row( $this->db->prepare( "SELECT * FROM {$this->p}till_sessions WHERE id=%d AND tenant_id=%d AND branch_id=%d AND cashier_id=%d AND status='open' FOR UPDATE", $session_id, $tenant_id, $branch_id, $cashier_id ), ARRAY_A );
+		$session = $this->db->get_row( $this->db->prepare( "SELECT * FROM {$this->p}till_sessions WHERE id=%d AND tenant_id=%d AND branch_id=%d AND status='open' FOR UPDATE", $session_id, $tenant_id, $branch_id ), ARRAY_A );
 		if ( ! $session ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'invalid_till_session', 'Open till session not found for this cashier.', array( 'status' => 409 ) ); }
+		$other_cashier = (int) $session['cashier_id'] !== (int) $cashier_id;
+		$closing_reason = sanitize_text_field( $closing_reason );
+		if ( $other_cashier && (! $can_manage_other || ! current_user_can( 'pharmasure_manage_pos_sessions' ) || (int) $cashier_id !== get_current_user_id()) ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'session_close_forbidden', 'Only the session cashier or an authorized branch manager may close this session.', array( 'status' => 403 ) ); }
+		if ( strlen( $closing_reason ) > 500 || ($other_cashier && ! $closing_reason) ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'closing_reason_required', 'A manager closure requires a reason of at most 500 characters.', array( 'status' => 422 ) ); }
 		$cash_sales = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(p.amount_minor),0) FROM {$this->p}sale_payments p JOIN {$this->p}sales s ON s.id=p.sale_id AND s.tenant_id=p.tenant_id AND s.branch_id=p.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.till_session_id=%d AND p.tenant_id=%d AND p.branch_id=%d AND p.method='cash' AND p.status='captured'", $tenant_id, $branch_id, $session_id, $tenant_id, $branch_id ) );
 		$cash_refunds = (int) $this->db->get_var( $this->db->prepare( "SELECT COALESCE(SUM(rp.amount_minor),0) FROM {$this->p}refund_payments rp JOIN {$this->p}refunds r ON r.id=rp.refund_id AND r.tenant_id=rp.tenant_id JOIN {$this->p}sales s ON s.id=r.sale_id AND s.tenant_id=r.tenant_id AND s.branch_id=r.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.till_session_id=%d AND rp.tenant_id=%d AND rp.method='cash' AND rp.status='completed'", $tenant_id, $branch_id, $session_id, $tenant_id ) );
 		$expected = (int) $session['opening_float_minor'] + $cash_sales - $cash_refunds;
 		$variance = (int) $counted_cash_minor - $expected;
-		$updated = $this->db->update( $this->p . 'till_sessions', array( 'status' => 'closed', 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => $variance, 'variance_status' => 0 === $variance ? 'not_required' : 'pending', 'closed_at' => current_time( 'mysql', true ) ), array( 'id' => $session_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'cashier_id' => $cashier_id, 'status' => 'open' ) );
+		$updated = $this->db->update( $this->p . 'till_sessions', array( 'status' => 'closed', 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => $variance, 'variance_status' => 0 === $variance ? 'not_required' : 'pending', 'closed_at' => current_time( 'mysql', true ), 'closed_by' => $cashier_id, 'closing_reason' => $closing_reason ?: null ), array( 'id' => $session_id, 'tenant_id' => $tenant_id, 'branch_id' => $branch_id, 'cashier_id' => $session['cashier_id'], 'status' => 'open' ) );
 		if ( 1 !== $updated ) { $this->db->query( 'ROLLBACK' ); return new \WP_Error( 'session_not_closed', 'Till session could not be closed.', array( 'status' => 409 ) ); }
 		$this->db->query( 'COMMIT' );
-		do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $cashier_id, 'action' => 'pos.till_closed', 'object_type' => 'till_session', 'object_id' => $session_id, 'details' => array( 'branch_id' => $branch_id, 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => (int) $counted_cash_minor - $expected ) ) );
+		do_action( 'pharmasure_audit_log', array( 'tenant_id' => $tenant_id, 'actor_id' => $cashier_id, 'action' => 'pos.till_closed', 'object_type' => 'till_session', 'object_id' => $session_id, 'details' => array( 'branch_id' => $branch_id, 'session_cashier_id' => (int) $session['cashier_id'], 'closed_by' => (int) $cashier_id, 'closing_reason' => $closing_reason, 'manager_closure' => $other_cashier, 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => (int) $counted_cash_minor - $expected ) ) );
 		return array( 'id' => $session_id, 'expected_cash_minor' => $expected, 'counted_cash_minor' => (int) $counted_cash_minor, 'variance_minor' => $variance, 'variance_status' => 0 === $variance ? 'not_required' : 'pending' );
 	}
 
@@ -74,10 +81,51 @@ final class PosService {
 	}
 
 	/** Build the complete branch and cashier state for the standalone POS shell. */
+	public function list_open_sessions( $tenant_id, $branch_id, $cashier_id ) {
+		if ( ! $this->owns_active_branch( $tenant_id, $branch_id ) ) { return new \WP_Error( 'invalid_pos_scope', 'An authorized active branch is required.', array( 'status' => 403 ) ); }
+		$rows = $this->db->get_results( $this->db->prepare( "SELECT s.id,s.till_id,s.cashier_id,s.opened_at,t.name till_name,t.code till_code,u.display_name cashier_name FROM {$this->p}till_sessions s JOIN {$this->p}tills t ON t.id=s.till_id AND t.tenant_id=s.tenant_id AND t.branch_id=s.branch_id LEFT JOIN {$this->db->users} u ON u.ID=s.cashier_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.status='open' ORDER BY s.opened_at,s.id", $tenant_id, $branch_id ), ARRAY_A );
+		if ( $rows === null || $this->db->last_error ) { return new \WP_Error( 'sessions_unavailable', 'Open sessions could not be loaded.', array( 'status' => 503 ) ); }
+		foreach ( $rows as &$row ) { $row['is_current_user'] = (int) $row['cashier_id'] === (int) $cashier_id; $row['can_close'] = $row['is_current_user'] || current_user_can( 'pharmasure_manage_pos_sessions' ); } unset( $row );
+		return $rows;
+	}
+
+	/** Cashier handoff uses the clinical sale; stock is never consumed again. */
+	public function prescription_payments($tenant_id,$branch_id) {
+		$claims_table=$this->db->get_var($this->db->prepare('SHOW TABLES LIKE %s',$this->p.'claims')) === $this->p.'claims';
+		$claim_filter=$claims_table ? " AND NOT EXISTS (SELECT 1 FROM {$this->p}claims c WHERE c.tenant_id=s.tenant_id AND c.branch_id=s.branch_id AND c.sale_id=s.id AND c.status<>'cancelled')" : '';
+		return $this->db->get_results($this->db->prepare("SELECT s.id,s.receipt_number,s.prescription_id,s.total_amount_minor,s.created_at,p.first_name,p.last_name FROM {$this->p}sales s JOIN {$this->p}patients p ON p.id=s.patient_id AND p.tenant_id=s.tenant_id AND p.branch_id=s.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.prescription_id IS NOT NULL AND s.status='completed' AND s.till_session_id IS NULL AND NOT EXISTS (SELECT 1 FROM {$this->p}sale_payments sp WHERE sp.tenant_id=s.tenant_id AND sp.branch_id=s.branch_id AND sp.sale_id=s.id){$claim_filter} ORDER BY s.created_at,s.id LIMIT 100",$tenant_id,$branch_id),ARRAY_A) ?: array();
+	}
+
+	public function charge_prescription($tenant_id,$branch_id,$sale_id,$session_id,$cashier_id,array $data) {
+		$payments=$data['payments'] ?? null;
+		if (!is_array($payments) || !$payments) { return new \WP_Error('invalid_payment','Enter at least one payment.',array('status'=>422)); }
+		$currency=strtoupper((string)$this->db->get_var($this->db->prepare("SELECT currency FROM {$this->p}tenants WHERE id=%d",$tenant_id)));
+		if (!preg_match('/^[A-Z]{3}$/',$currency)) $currency='USD';
+		$normalized=$this->normalize_payments($payments,$currency);if(is_wp_error($normalized))return $normalized;
+		$this->db->query('START TRANSACTION');
+		try {
+			$session=$this->db->get_row($this->db->prepare("SELECT id FROM {$this->p}till_sessions WHERE id=%d AND tenant_id=%d AND branch_id=%d AND cashier_id=%d AND status='open' FOR UPDATE",$session_id,$tenant_id,$branch_id,$cashier_id),ARRAY_A);
+			if(!$session)throw new \DomainException('Open your own till session before charging a prescription.');
+			$sale=$this->db->get_row($this->db->prepare("SELECT * FROM {$this->p}sales WHERE id=%d AND tenant_id=%d AND branch_id=%d AND prescription_id IS NOT NULL AND status='completed' FOR UPDATE",$sale_id,$tenant_id,$branch_id),ARRAY_A);
+			if(!$sale)throw new \DomainException('A completed branch dispensing is required.');
+			$existing=$this->db->get_var($this->db->prepare("SELECT id FROM {$this->p}sale_payments WHERE sale_id=%d AND tenant_id=%d AND branch_id=%d LIMIT 1",$sale_id,$tenant_id,$branch_id));
+			if($existing || !empty($sale['till_session_id']))throw new \DomainException('This prescription has already been picked up for payment. Refresh your queue.');
+			if($this->db->get_var($this->db->prepare('SHOW TABLES LIKE %s',$this->p.'claims')) === $this->p.'claims' && $this->db->get_var($this->db->prepare("SELECT id FROM {$this->p}claims WHERE sale_id=%d AND tenant_id=%d AND branch_id=%d AND status<>'cancelled' LIMIT 1",$sale_id,$tenant_id,$branch_id)))throw new \DomainException('This dispensing has a medical-aid claim. Complete its claim and copayment workflow rather than charging the full amount.');
+			if(array_sum(array_column($normalized,'amount_minor')) !== (int)$sale['total_amount_minor'])throw new \DomainException('Payments must equal the recorded prescription total.');
+			$now=current_time('mysql',true);
+			foreach($normalized as $payment){$payment['tenant_id']=$tenant_id;$payment['branch_id']=$branch_id;$payment['sale_id']=$sale_id;$payment['created_at']=$now;$this->must_insert('sale_payments',$payment);}
+			if(1 !== $this->db->update($this->p.'sales',array('till_session_id'=>$session_id,'cashier_id'=>$cashier_id),array('id'=>$sale_id,'tenant_id'=>$tenant_id,'branch_id'=>$branch_id)))throw new \RuntimeException('Cashier handoff could not be recorded.');
+			$this->db->query('COMMIT');$this->audit($tenant_id,$cashier_id,'pos.prescription_charged','sale',$sale_id,array('branch_id'=>$branch_id,'prescription_id'=>$sale['prescription_id'],'total_amount_minor'=>$sale['total_amount_minor']));
+			return array('id'=>$sale_id,'receipt_number'=>$sale['receipt_number'],'total_amount_minor'=>(int)$sale['total_amount_minor']);
+		}catch(\Throwable $error){$this->db->query('ROLLBACK');return new \WP_Error('prescription_payment_failed',$error->getMessage(),array('status'=>409));}
+	}
+
 	public function workspace( $tenant_id, $branch_id, $cashier_id ) {
 		if ( ! $this->owns_active_branch( $tenant_id, $branch_id ) ) {
 			return new \WP_Error( 'invalid_pos_scope', 'An authorized active branch is required.', array( 'status' => 403 ) );
 		}
+		$open_sessions = $this->list_open_sessions( $tenant_id, $branch_id, $cashier_id );
+		if ( is_wp_error( $open_sessions ) ) { return $open_sessions; }
 		$scope = $this->db->get_row( $this->db->prepare( "SELECT t.trading_name,t.currency,b.name branch_name FROM {$this->p}tenants t JOIN {$this->p}branches b ON b.tenant_id=t.id AND b.id=%d AND b.is_active=1 WHERE t.id=%d", $branch_id, $tenant_id ), ARRAY_A );
 		$tills = $this->db->get_results( $this->db->prepare( "SELECT t.id,t.name,t.code,t.status,s.id session_id,s.cashier_id,s.opened_at FROM {$this->p}tills t LEFT JOIN {$this->p}till_sessions s ON s.tenant_id=t.tenant_id AND s.branch_id=t.branch_id AND s.till_id=t.id AND s.status='open' WHERE t.tenant_id=%d AND t.branch_id=%d AND t.status='active' ORDER BY t.name", $tenant_id, $branch_id ), ARRAY_A );
 		$session = $this->db->get_row( $this->db->prepare( "SELECT s.id,s.till_id,s.opening_float_minor,s.opened_at,t.name till_name,t.code till_code FROM {$this->p}till_sessions s JOIN {$this->p}tills t ON t.id=s.till_id AND t.tenant_id=s.tenant_id AND t.branch_id=s.branch_id WHERE s.tenant_id=%d AND s.branch_id=%d AND s.cashier_id=%d AND s.status='open' ORDER BY s.opened_at DESC LIMIT 1", $tenant_id, $branch_id, $cashier_id ), ARRAY_A );
@@ -95,9 +143,11 @@ final class PosService {
 			'scope' => $scope,
 			'session' => $session ?: null,
 			'tills' => $tills ?: array(),
+			'open_sessions' => $open_sessions,
 			'products' => $products ?: array(),
 			'holds' => $this->list_holds( $tenant_id, $branch_id ),
 			'recent_sales' => $sales ?: array(),
+			'prescription_payments' => $this->prescription_payments($tenant_id,$branch_id),
 			'metrics' => $metrics,
 			'pricing' => $this->pricing_policy( $tenant_id, $branch_id ),
 		);

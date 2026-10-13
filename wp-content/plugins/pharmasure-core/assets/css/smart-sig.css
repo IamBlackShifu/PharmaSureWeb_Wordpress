@@ -1,0 +1,51 @@
+.ps-smart-sig { grid-column: 1 / -1; border-top: 1px solid var(--ps-border, #64748b); padding: 1rem; }
+.ps-smart-sig [hidden] { display: none !important; }
+.ps-sig-panel { display: grid; gap: .75rem; }
+.ps-sig-preview, .ps-sig-review { padding: .75rem; border-inline-start: 3px solid #16875d; background: var(--ps-surface, transparent); }
+.ps-sig-suggestions { grid-column: 1 / -1; }
+.ps-sig-suggestions [role=option] { display: flex; justify-content: space-between; gap: .5rem; padding: .25rem; }
+.ps-sig-suggestions [aria-selected=true] { outline: 2px solid #16875d; }
+.ps-smart-sig input, .ps-smart-sig select, .ps-smart-sig textarea { max-width: 100%; }
+.ps-smart-sig input[type=checkbox], .ps-sig-management input[type=checkbox] {
+  width: 16px; min-width: 16px; max-width: 16px;
+  height: 16px; min-height: 16px; max-height: 16px;
+  padding: 0; margin: 0; flex: 0 0 16px;
+  accent-color: var(--ps-emerald, #16875d); cursor: pointer;
+}
+.ps-smart-sig .ps-sig-checkbox, .ps-sig-management .ps-sig-checkbox {
+  display: flex; align-items: center; gap: 9px; min-height: 32px; cursor: pointer;
+}
+.ps-sig-checkbox input[type=checkbox] { order: -1; }
+.ps-smart-sig .ps-sig-checkbox > span, .ps-sig-management .ps-sig-checkbox > span {
+  font-family: var(--ps-sans, sans-serif); font-size: 12px; font-weight: 500;
+  line-height: 1.5; letter-spacing: normal; text-transform: none;
+}
+.ps-sig-management > [role=status]:empty { display: none; }
+.ps-sig-reference {
+  grid-column: 1 / -1; padding: 14px 16px; margin: 2px 0 8px;
+  border: 1px solid var(--ps-line); background: var(--ps-surface-raised);
+  font-family: var(--ps-sans, sans-serif); font-size: 12px; font-weight: 400; line-height: 1.65;
+}
+.ps-sig-reference h4 { margin: 0 0 10px; font-size: 12px; font-weight: 600; }
+.ps-sig-reference dl { display: grid; gap: 8px; margin: 0; }
+.ps-sig-reference dl > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 12px; }
+.ps-sig-reference dt { color: var(--ps-muted); font-weight: 500; }
+.ps-sig-reference dd { margin: 0; font-family: var(--ps-mono, monospace); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.ps-sig-management .ps-sig-reference p { margin: 12px 0 0; color: var(--ps-muted); font-size: 12px; font-weight: 400; line-height: 1.6; }
+.ps-sig-management .ps-sig-table { margin-top: 14px; }
+.ps-sig-management .ps-sig-table th { font-size: 10px; }
+.ps-sig-management .ps-sig-table td { font-size: 12px; height: 44px; }
+@media (max-width: 520px) { .ps-sig-reference dl > div { grid-template-columns: 1fr; gap: 2px; } }
+.ps-sig-review p { white-space: pre-wrap; }
+.ps-sig-setup { padding: 16px; border: 1px solid var(--ps-line); border-left: 3px solid var(--ps-emerald, #16875d); background: var(--ps-surface-raised); }
+.ps-sig-setup [hidden] { display: none !important; }
+.ps-sig-setup h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.ps-sig-setup p, .ps-smart-sig > [role=status], .ps-sig-approval-guide, .ps-sig-management > p { font-size: 12px; font-weight: 400; line-height: 1.65; }
+.ps-sig-setup p { margin: 8px 0 12px; color: var(--ps-muted); }
+.ps-sig-setup-form { display: grid; gap: 12px; margin-top: 12px; }
+.ps-sig-setup-form .ps-operation-button { justify-self: start; }
+.ps-sig-more { grid-column: 1 / -1; border: 1px solid var(--ps-line); padding: 12px 14px; }
+.ps-sig-more summary { cursor: pointer; font-size: 12px; font-weight: 500; }
+.ps-sig-more summary:focus-visible { outline: 2px solid var(--ps-emerald, #16875d); outline-offset: 4px; }
+.ps-sig-more > .ps-workflow-grid { margin-top: 14px; }
+.ps-smart-sig .ps-sig-preview:empty { display: none; }

@@ -16,7 +16,7 @@ final class Installer {
 			"CREATE TABLE {$p}till_sessions (
 				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,tenant_id BIGINT UNSIGNED NOT NULL,branch_id BIGINT UNSIGNED NOT NULL,till_id BIGINT UNSIGNED NOT NULL,
 				cashier_id BIGINT UNSIGNED NOT NULL,status VARCHAR(20) NOT NULL DEFAULT 'open',opening_float_minor BIGINT NOT NULL DEFAULT 0,
-				expected_cash_minor BIGINT NULL,counted_cash_minor BIGINT NULL,variance_minor BIGINT NULL,variance_status VARCHAR(20) NOT NULL DEFAULT 'not_required',variance_reason VARCHAR(500) NULL,variance_approved_by BIGINT UNSIGNED NULL,variance_approved_at DATETIME NULL,opened_at DATETIME NOT NULL,closed_at DATETIME NULL,
+				expected_cash_minor BIGINT NULL,counted_cash_minor BIGINT NULL,variance_minor BIGINT NULL,variance_status VARCHAR(20) NOT NULL DEFAULT 'not_required',variance_reason VARCHAR(500) NULL,variance_approved_by BIGINT UNSIGNED NULL,variance_approved_at DATETIME NULL,opened_at DATETIME NOT NULL,closed_at DATETIME NULL,closed_by BIGINT UNSIGNED NULL,closing_reason VARCHAR(500) NULL,
 				PRIMARY KEY  (id),KEY open_till (tenant_id,branch_id,till_id,status),KEY cashier_status (tenant_id,cashier_id,status)
 			) $c",
 			"CREATE TABLE {$p}document_sequences (
@@ -84,5 +84,7 @@ final class Installer {
 		$wpdb->query( "UPDATE {$p}sale_items si JOIN (SELECT tenant_id,reference_id sale_id,drug_id,SUM(ROUND(ABS(quantity_delta)*unit_cost_minor)) cost_minor FROM {$p}stock_movements WHERE reference_type='sale' AND quantity_delta<0 AND unit_cost_minor IS NOT NULL GROUP BY tenant_id,reference_id,drug_id) c ON c.tenant_id=si.tenant_id AND c.sale_id=si.sale_id AND c.drug_id=si.drug_id SET si.cost_amount_minor=c.cost_minor WHERE si.cost_amount_minor IS NULL" );
 		$wpdb->query( "UPDATE {$p}refund_items ri JOIN {$p}stock_movements m ON m.tenant_id=ri.tenant_id AND m.reference_type='sale' AND m.reference_id=ri.sale_id AND m.drug_id=ri.drug_id AND m.batch_id=ri.batch_id SET ri.cost_amount_minor=ROUND(ri.quantity*m.unit_cost_minor) WHERE ri.cost_amount_minor IS NULL AND m.unit_cost_minor IS NOT NULL" );
 		update_site_option( 'pharmasure_pos_db_version', DB_VERSION );
+		$session_columns = $wpdb->get_col( "SHOW COLUMNS FROM {$p}till_sessions", 0 );
+		if ( in_array( 'closed_by', $session_columns, true ) && in_array( 'closing_reason', $session_columns, true ) ) { update_option( 'pharmasure_pos_site_db_version', DB_VERSION, false ); }
 	}
 }

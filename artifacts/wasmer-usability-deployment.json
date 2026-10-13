@@ -1,0 +1,22 @@
+﻿{
+    "app":  "samkan60/pharmasure",
+    "app_id":  "da_nBBIbtXU33lQ",
+    "version":  "v15",
+    "version_id":  "dav_Ra7Iet1up8mD",
+    "previous_version":  "v14",
+    "previous_version_id":  "dav_RbxI9tquA7kY",
+    "package":  "sha256:e48c3b324b908053fdf8de1825eba9f3fd47a73c3752cb6c12ce32ab717b2774",
+    "url":  "https://pharmasure.wasmer.app",
+    "deployed_at_utc":  "2026-10-12T13:19:06.1463071Z",
+    "smoke_checks":  [
+                         "active version v15 confirmed",
+                         "health, homepage and login 200",
+                         "unauthenticated app redirects to login",
+                         "live app.js, crisp-theme.css, logo SVG and landing.css SHA256 match",
+                         "unauthenticated notifications GET 403 and provider POST 401",
+                         "desktop/mobile landing styled with no horizontal overflow",
+                         "sign-in click and pharmacy-prefixed login/logout pass"
+                     ],
+    "authenticated_workflow_testing":  "pending tenant UAT",
+    "preview_note":  "Preview created with --no-default; readiness wait interrupted after version creation, then v15 explicitly activated and checked."
+}
